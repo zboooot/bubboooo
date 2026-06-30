@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>气球防线</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a2e; touch-action: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+
+    <!-- 渲染画布 -->
+    <canvas id="physicsCanvas"></canvas>
+
+<script>
+    // ==========================================
+    // 物理引擎核心参数
+    // ==========================================
+    const canvas = document.getElementById('physicsCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    window.addEventListener('resize', () => {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+    });
+
+    const gravity = { x: 0, y: 1500 }; // 重力加速度
+    const numSubsteps = 10;            // 小步长迭代次数（保证高稳定性）
+    const pbdIterations = 2;           // PBD 约束求解迭代次数
+    let dt = 1 / 60;                   // 基础时间步长
+
+    const particles = [];
+    const constraints = [];
+    const balls = [];
+    let collisionOrderFlip = false;
+    let collisionPhase = 0;
+    let constraintOrderFlip = false;
+
+    // ==========================================
+    // 基础物理类定义
+    // ==========================================
+
+    // 质点类
+    class Particle {
+        constructor(x, y, mass) {
+            this.x = x;
+            this.y = y;
+            this.px = x; // 上一帧的X位置 (预测位置)
+            this.py = y; // 上一帧的Y位置
+            this.vx = 0;
+            this.vy = 0;
+            this.mass = mass;
+            this.invMass = mass > 0 ? 1 / mass : 0;
+        }
+    }
+
+    // 距离约束 (维持球的表面张力和防折叠)
+    class DistanceConstraint {
+        constructor(p1, p2, stiffness = 1.0) {
+            this.p1 = p1;
+            this.p2 = p2;
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            this.restLength = Math.hypot(dx, dy);
+            this.stiffness = stiffness;
+        }
+
+        solve() {
+            const dx = this.p1.x - this.p2.x;
+            const dy = this.p1.y - this.p2.y;
+            const d = Math.hypot(dx, dy);
+            if (d === 0) return;
+
+            const diff = (d - this.restLength) / d;
+            const w1 = this.p1.invMass;
+            const w2 = this.p2.invMass;
+            const w = w1 + w2;
+            if (w === 0) return;
+
+            const corrX = dx * diff * this.stiffness / w;
+            const corrY = dy * diff * this.stiffness / w;
+
+            this.p1.x -= corrX * w1;
+            this.p1.y -= corrY * w1;
+            this.p2.x += corrX * w2;
+            this.p2.y += corrY * w2;
+        }
+    }
+
+    // 面积/体积约束 (核心：让球像充气瑜伽球一样保持内部气压)
+    class AreaConstraint {
+        constructor(particles, stiffness = 1.0) {
+            this.particles = particles;
+            this.stiffness = stiffness;
+            this.restArea = this.calculateArea();
+            this.restArea0 = this.restArea;
+            this.targetArea = this.restArea;
+        }
+
+        setTargetArea(area) {
+            this.targetArea = area;
+        }
+
+        calculateArea() {
+            let area = 0;
+            const N = this.particles.length;
+            for (let i = 0; i < N; i++) {
+                const p = this.particles[i];
+                const pNext = this.particles[(i + 1) % N];
+                area += (p.x * pNext.y - pNext.x * p.y);
+            }
+            return 0.5 * area;
+        }
+
+        solve() {
+            const N = this.particles.length;
+            const currentArea = this.calculateArea();
+            const deltaArea = currentArea - this.targetArea;
+            
+            let sumWGrad2 = 0;
+            const gradients = new Array(N);
+
+            for (let i = 0; i < N; i++) {
+                const pNext = this.particles[(i + 1) % N];
+                const pPrev = this.particles[(i - 1 + N) % N];
+
+                // 面积对当前顶点的梯度
+                gradients[i] = {
+                    x: 0.5 * (pNext.y - pPrev.y),
+                    y: 0.5 * (pPrev.x - pNext.x)
+                };
+
+                const w = this.particles[i].invMass;
+                sumWGrad2 += w * (gradients[i].x ** 2 + gradients[i].y ** 2);
+            }
+
+            if (sumWGrad2 < 0.00001) return;
+
+            // PBD 乘子
+            const lambda = -deltaArea / sumWGrad2 * this.stiffness;
+
+            // 应用位置校正
+            for (let i = 0; i < N; i++) {
+                const p = this.particles[i];
+                const w = p.invMass;
+                p.x += lambda * w * gradients[i].x;
+                p.y += lambda * w * gradients[i].y;
+            }
+        }
+    }
+
+    // ==========================================
+    // 实体生成逻辑
+    // ==========================================
+    
+    const COLORS = {
+        red: { base: '#ff0055', light: '#ff6699' },
+        cyan: { base: '#00f3ff', light: '#99faff' },
+    };
+    const ENEMY_FILL = { red: '#ff5577', cyan: '#44eeff' };
+
+    const GAME_CFG = {
+        AIR_CRIT_MIN: 70,
+        AIR_BURST: 100,
+        critPMin: 0.002,
+        critPMax: 0.06,
+        baseLeak: 2,
+        kPressure: 1.8,
+        pumpGain: 6,
+        pumpCost: 8,
+        explodeBaseR: 95,
+        colorMatchBonus: 1.35,
+    };
+
+    function airToAreaScale(air) {
+        return 0.62 + 0.0075 * air;
+    }
+
+    function createGameBall(cx, cy, radius, colorId, air0) {
+        const pal = COLORS[colorId] || COLORS.red;
+        const N = 40;
+        const ballParticles = [];
+
+        for (let i = 0; i < N; i++) {
+            const angle = (i / N) * Math.PI * 2;
+            const px = cx + Math.cos(angle) * radius;
+            const py = cy + Math.sin(angle) * radius;
+            const p = new Particle(px, py, 1.0);
+            ballParticles.push(p);
+            particles.push(p);
+        }
+
+        for (let i = 0; i < N; i++) {
+            constraints.push(new DistanceConstraint(ballParticles[i], ballParticles[(i + 1) % N], 1.0));
+            constraints.push(new DistanceConstraint(ballParticles[i], ballParticles[(i + 2) % N], 0.8));
+        }
+
+        const areaConstraint = new AreaConstraint(ballParticles, 1.0);
+        constraints.push(areaConstraint);
+        const restArea0 = areaConstraint.restArea0;
+
+        const ball = {
+            particles: ballParticles,
+            radius,
+            colorId,
+            colorBase: pal.base,
+            colorLight: pal.light,
+            air: air0,
+            alive: true,
+            areaConstraint,
+            restArea0,
+            shakeT: Math.random() * 100,
+        };
+        ball.areaConstraint.setTargetArea(restArea0 * airToAreaScale(air0));
+        balls.push(ball);
+        return ball;
+    }
+
+    const GamePhase = { LINEUP: 'lineup', DROP: 'drop', FIGHT: 'fight', WIN: 'win', LOSE: 'lose' };
+    const phaseLabels = { lineup: '布阵', drop: '敌人落下', fight: '战斗', win: '胜利', lose: '失败' };
+
+    const LEVELS = [{
+        maxEnergy: 100,
+        failThreshold: 5,
+        dropObserveSec: 2.5,
+        balloons: [
+            { x: 0.25, y: 0.55, r: 70, colorId: 'red', air0: 55 },
+            { x: 0.5, y: 0.5, r: 75, colorId: 'cyan', air0: 60 },
+            { x: 0.75, y: 0.55, r: 70, colorId: 'red', air0: 50 },
+        ],
+        enemies: [
+            { x: 0.15, colorId: 'red' }, { x: 0.35, colorId: 'cyan' }, { x: 0.55, colorId: 'red' },
+            { x: 0.75, colorId: 'cyan' }, { x: 0.9, colorId: 'red' },
+        ],
+    }];
+
+    let gamePhase = GamePhase.LINEUP;
+    let levelIndex = 0;
+    let energy = 100;
+    let maxEnergy = 100;
+    let failThreshold = 5;
+    let escapedCount = 0;
+    let phaseTimer = 0;
+    let dropObserveSec = 2.5;
+    const enemies = [];
+    const burstFx = [];
+    let selectedBall = null;
+    let pointerDown = false;
+    let pumpAccumulator = 0;
+    const dragNode = null;
+
+    function getBallCentroid(ball) {
+        const pts = ball.particles;
+        let cx = 0, cy = 0;
+        for (const p of pts) { cx += p.x; cy += p.y; }
+        return { x: cx / pts.length, y: cy / pts.length };
+    }
+
+    function pickBallAt(x, y) {
+        let best = null;
+        let bestD = Infinity;
+        for (const ball of balls) {
+            if (!ball.alive) continue;
+            const c = getBallCentroid(ball);
+            const d = Math.hypot(x - c.x, y - c.y);
+            if (d < ball.radius * 1.35 && d < bestD) {
+                if (pointInPolygon(x, y, ball.particles) || d < ball.radius * 0.95) {
+                    bestD = d;
+                    best = ball;
+                }
+            }
+        }
+        return best;
+    }
+
+    function applyAirToBall(ball) {
+        if (!ball.alive) return;
+        ball.areaConstraint.setTargetArea(ball.restArea0 * airToAreaScale(ball.air));
+    }
+
+    function pumpBall(ball) {
+        if (!ball || !ball.alive || gamePhase !== GamePhase.FIGHT) return;
+        if (energy < GAME_CFG.pumpCost) return;
+        energy -= GAME_CFG.pumpCost;
+        ball.air = Math.min(120, ball.air + GAME_CFG.pumpGain);
+        applyAirToBall(ball);
+    }
+
+    function explodeBall(ball) {
+        if (!ball.alive) return;
+        const c = getBallCentroid(ball);
+        const air = ball.air;
+        const radius = GAME_CFG.explodeBaseR * (0.75 + air / 120);
+        burstFx.push({ x: c.x, y: c.y, r: 0, maxR: radius, life: 0.45, colorId: ball.colorId });
+
+        for (const e of enemies) {
+            if (!e.alive) continue;
+            const d = Math.hypot(e.x - c.x, e.y - c.y);
+            const match = e.colorId === ball.colorId;
+            const effectiveR = match ? radius * GAME_CFG.colorMatchBonus : radius * 0.85;
+            if (d < effectiveR + e.r) e.alive = false;
+        }
+
+        ball.alive = false;
+        ball.areaConstraint.stiffness = 0;
+        for (const p of ball.particles) {
+            p.invMass = 0;
+            p.vx = (p.x - c.x) * 8;
+            p.vy = (p.y - c.y) * 8 - 200;
+        }
+    }
+
+    function spawnEnemiesForLevel(level) {
+        enemies.length = 0;
+        for (const spec of level.enemies) {
+            enemies.push({
+                x: spec.x * width,
+                y: -30 - Math.random() * 40,
+                vy: 0,
+                r: 14,
+                colorId: spec.colorId,
+                alive: true,
+            });
+        }
+    }
+
+    function resetWorldFromLevel(idx = 0) {
+        levelIndex = idx;
+        const level = LEVELS[idx] || LEVELS[0];
+        particles.length = 0;
+        constraints.length = 0;
+        balls.length = 0;
+        enemies.length = 0;
+        burstFx.length = 0;
+        escapedCount = 0;
+        maxEnergy = level.maxEnergy;
+        energy = level.maxEnergy;
+        failThreshold = level.failThreshold;
+        dropObserveSec = level.dropObserveSec;
+        phaseTimer = 0;
+        selectedBall = null;
+
+        for (const b of level.balloons) {
+            createGameBall(b.x * width, b.y * height, b.r, b.colorId, b.air0);
+        }
+        gamePhase = GamePhase.LINEUP;
+    }
+
+    function startDropPhase() {
+        if (gamePhase !== GamePhase.LINEUP) return;
+        const level = LEVELS[levelIndex];
+        spawnEnemiesForLevel(level);
+        gamePhase = GamePhase.DROP;
+        phaseTimer = 0;
+    }
+
+    resetWorldFromLevel(0);
+
+    window.addEventListener('keydown', e => {
+        if (e.key === ' ' || e.key === 'Enter') startDropPhase();
+        if (e.key === 'r' || e.key === 'R') resetWorldFromLevel(levelIndex);
+    });
+
+    let pointer = { x: 0, y: 0 };
+
+    function onPointerDown(clientX, clientY) {
+        pointer.x = clientX;
+        pointer.y = clientY;
+        pointerDown = true;
+        pumpAccumulator = 0;
+        selectedBall = pickBallAt(clientX, clientY);
+        if (gamePhase === GamePhase.FIGHT) pumpBall(selectedBall);
+    }
+
+    function onPointerMove(clientX, clientY) {
+        pointer.x = clientX;
+        pointer.y = clientY;
+    }
+
+    function onPointerUp() {
+        pointerDown = false;
+    }
+
+    canvas.addEventListener('mousedown', e => onPointerDown(e.clientX, e.clientY));
+    window.addEventListener('mousemove', e => onPointerMove(e.clientX, e.clientY));
+    window.addEventListener('mouseup', onPointerUp);
+    canvas.addEventListener('touchstart', e => {
+        e.preventDefault();
+        onPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+    window.addEventListener('touchmove', e => {
+        onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+
+    function updateEnemies(dt) {
+        const g = 900;
+        for (const e of enemies) {
+            if (!e.alive) continue;
+            e.vy += g * dt;
+            e.y += e.vy * dt;
+
+            for (const ball of balls) {
+                if (!ball.alive) continue;
+                if (pointInPolygon(e.x, e.y, ball.particles)) {
+                    const c = getBallCentroid(ball);
+                    const nx = e.x - c.x;
+                    const ny = e.y - c.y;
+                    const len = Math.hypot(nx, ny) || 1;
+                    e.x = c.x + (nx / len) * (ball.radius * 0.92);
+                    e.y = c.y + (ny / len) * (ball.radius * 0.92);
+                    e.vy *= 0.3;
+                    break;
+                }
+            }
+
+            if (e.y > height - 15) {
+                e.alive = false;
+                escapedCount++;
+            }
+        }
+    }
+
+    function countEnemiesOnBall(ball) {
+        let n = 0;
+        for (const e of enemies) {
+            if (!e.alive) continue;
+            if (pointInPolygon(e.x, e.y, ball.particles)) n++;
+        }
+        return n;
+    }
+
+    function updateGame(dt) {
+        phaseTimer += dt;
+
+        if (gamePhase === GamePhase.DROP) {
+            updateEnemies(dt);
+            if (phaseTimer >= dropObserveSec) gamePhase = GamePhase.FIGHT;
+        }
+
+        if (gamePhase === GamePhase.FIGHT) {
+            if (pointerDown && selectedBall && selectedBall.alive) {
+                pumpAccumulator += dt;
+                while (pumpAccumulator >= 0.12) {
+                    pumpAccumulator -= 0.12;
+                    pumpBall(selectedBall);
+                }
+            }
+
+            for (const ball of balls) {
+                if (!ball.alive) continue;
+                applyAirToBall(ball);
+
+                let leak = GAME_CFG.baseLeak;
+                leak += GAME_CFG.kPressure * countEnemiesOnBall(ball);
+                ball.air = Math.max(0, ball.air - leak * dt);
+
+                if (ball.air >= GAME_CFG.AIR_BURST) {
+                    explodeBall(ball);
+                    continue;
+                }
+                if (ball.air >= GAME_CFG.AIR_CRIT_MIN && ball.air < GAME_CFG.AIR_BURST) {
+                    const t = (ball.air - GAME_CFG.AIR_CRIT_MIN) / (GAME_CFG.AIR_BURST - GAME_CFG.AIR_CRIT_MIN);
+                    const p = GAME_CFG.critPMin + (GAME_CFG.critPMax - GAME_CFG.critPMin) * t;
+                    if (Math.random() < p * dt * 60) explodeBall(ball);
+                }
+            }
+
+            updateEnemies(dt);
+
+            const aliveEnemies = enemies.filter(e => e.alive).length;
+            if (aliveEnemies === 0) gamePhase = GamePhase.WIN;
+            if (escapedCount >= failThreshold) gamePhase = GamePhase.LOSE;
+        }
+
+        for (let i = burstFx.length - 1; i >= 0; i--) {
+            burstFx[i].life -= dt;
+            burstFx[i].r += dt * 280;
+            if (burstFx[i].life <= 0) burstFx.splice(i, 1);
+        }
+    }
+
+    // ==========================================
+    // 物理模拟核心循环
+    // ==========================================
+
+    function polygonCentroid(poly) {
+        let cx = 0;
+        let cy = 0;
+        for (let i = 0; i < poly.length; i++) {
+            cx += poly[i].x;
+            cy += poly[i].y;
+        }
+        return { x: cx / poly.length, y: cy / poly.length };
+    }
+
+    function pointInPolygon(px, py, poly) {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const xi = poly[i].x, yi = poly[i].y;
+            const xj = poly[j].x, yj = poly[j].y;
+            const intersects = ((yi > py) !== (yj > py)) &&
+                (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-8) + xi);
+            if (intersects) inside = !inside;
+        }
+        return inside;
+    }
+
+    function closestPointOnSegment(px, py, ax, ay, bx, by) {
+        const abx = bx - ax;
+        const aby = by - ay;
+        const abLenSq = abx * abx + aby * aby;
+        if (abLenSq < 1e-8) {
+            return { x: ax, y: ay, t: 0 };
+        }
+        let t = ((px - ax) * abx + (py - ay) * aby) / abLenSq;
+        t = Math.max(0, Math.min(1, t));
+        return {
+            x: ax + abx * t,
+            y: ay + aby * t,
+            t
+        };
+    }
+
+    function getOutwardNormal(ax, ay, bx, by, centroid) {
+        const ex = bx - ax;
+        const ey = by - ay;
+        let nx = -ey;
+        let ny = ex;
+        const mx = (ax + bx) * 0.5;
+        const my = (ay + by) * 0.5;
+        const toOutsideX = mx - centroid.x;
+        const toOutsideY = my - centroid.y;
+        if (nx * toOutsideX + ny * toOutsideY < 0) {
+            nx = -nx;
+            ny = -ny;
+        }
+        const len = Math.hypot(nx, ny) || 1;
+        return { x: nx / len, y: ny / len };
+    }
+
+    function projectPointVsPolygon(point, poly, centroid, contactSlop) {
+        let best = null;
+        let bestDistSq = Infinity;
+
+        for (let i = 0; i < poly.length; i++) {
+            const j = (i + 1) % poly.length;
+            const a = poly[i];
+            const b = poly[j];
+            const cp = closestPointOnSegment(point.x, point.y, a.x, a.y, b.x, b.y);
+            const dx = point.x - cp.x;
+            const dy = point.y - cp.y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                best = { i, j, cp };
+            }
+        }
+
+        if (!best) return;
+
+        const a = poly[best.i];
+        const b = poly[best.j];
+        const normal = getOutwardNormal(a.x, a.y, b.x, b.y, centroid);
+        const signedDist = (point.x - best.cp.x) * normal.x + (point.y - best.cp.y) * normal.y;
+        const inside = pointInPolygon(point.x, point.y, poly);
+        const penetration = inside ? (contactSlop - signedDist) : Math.max(0, contactSlop - signedDist);
+
+        if (penetration <= 0) return;
+
+        const wp = point.invMass;
+        const wa = a.invMass;
+        const wb = b.invMass;
+        const t = best.cp.t;
+        const wA = wa * (1 - t);
+        const wB = wb * t;
+        const wSum = wp + wA + wB;
+        if (wSum < 1e-8) return;
+
+        const corrX = normal.x * penetration;
+        const corrY = normal.y * penetration;
+
+        point.x += corrX * (wp / wSum);
+        point.y += corrY * (wp / wSum);
+
+        a.x -= corrX * (wA / wSum);
+        a.y -= corrY * (wA / wSum);
+        b.x -= corrX * (wB / wSum);
+        b.y -= corrY * (wB / wSum);
+    }
+
+    function solveBallCollisions() {
+        const contactSlop = 2.0;
+        const aliveBalls = balls.filter(b => b.alive);
+        if (aliveBalls.length < 2) return;
+
+        for (let a = 0; a < aliveBalls.length; a++) {
+            for (let b = a + 1; b < aliveBalls.length; b++) {
+                const b1 = aliveBalls[a].particles;
+                const b2 = aliveBalls[b].particles;
+                const c1 = polygonCentroid(b1);
+                const c2 = polygonCentroid(b2);
+                const offset1 = collisionPhase % b1.length;
+                const offset2 = collisionPhase % b2.length;
+
+                if (!collisionOrderFlip) {
+                    for (let i = 0; i < b1.length; i++) {
+                        const idx = (offset1 + i) % b1.length;
+                        projectPointVsPolygon(b1[idx], b2, c2, contactSlop);
+                    }
+                    for (let i = 0; i < b2.length; i++) {
+                        const idx = (offset2 + i) % b2.length;
+                        projectPointVsPolygon(b2[idx], b1, c1, contactSlop);
+                    }
+                } else {
+                    for (let i = 0; i < b2.length; i++) {
+                        const idx = (offset2 + i) % b2.length;
+                        projectPointVsPolygon(b2[idx], b1, c1, contactSlop);
+                    }
+                    for (let i = 0; i < b1.length; i++) {
+                        const idx = (offset1 + i) % b1.length;
+                        projectPointVsPolygon(b1[idx], b2, c2, contactSlop);
+                    }
+                }
+            }
+        }
+        collisionOrderFlip = !collisionOrderFlip;
+        collisionPhase++;
+    }
+
+    function updatePhysics() {
+        const subdt = dt / numSubsteps;
+
+        for (let step = 0; step < numSubsteps; step++) {
+            // 1. 施加外力并预测位置
+            for (let p of particles) {
+                if (p === dragNode) continue; 
+                
+                p.vy += gravity.y * subdt;
+                p.vx += gravity.x * subdt;
+                
+                p.px = p.x;
+                p.py = p.y;
+                
+                p.x += p.vx * subdt;
+                p.y += p.vy * subdt;
+            }
+
+            // 拖拽控制点作为运动学(Kinematic)粒子
+            if (dragNode) {
+                dragNode.x = mouse.x;
+                dragNode.y = mouse.y;
+                dragNode.px = mouse.x;
+                dragNode.py = mouse.y;
+            }
+
+            // 2. PBD 约束求解
+            for (let iter = 0; iter < pbdIterations; iter++) {
+                // 内部弹簧与面积约束
+                if (!constraintOrderFlip) {
+                    for (let i = 0; i < constraints.length; i++) {
+                        constraints[i].solve();
+                    }
+                } else {
+                    for (let i = constraints.length - 1; i >= 0; i--) {
+                        constraints[i].solve();
+                    }
+                }
+                constraintOrderFlip = !constraintOrderFlip;
+
+                // 球体间互相挤压
+                solveBallCollisions();
+
+                // 边界碰撞
+                for (let p of particles) {
+                    const padding = 5; // 边缘厚度缓冲
+                    if (p.y > height - padding) p.y = height - padding;
+                    if (p.y < padding) p.y = padding;
+                    if (p.x > width - padding) p.x = width - padding;
+                    if (p.x < padding) p.x = padding;
+                }
+            }
+
+            // 3. 更新速度 (带摩擦与反弹)
+            for (let p of particles) {
+                if (p === dragNode) {
+                    p.vx = 0; p.vy = 0;
+                    continue;
+                }
+
+                p.vx = (p.x - p.px) / subdt;
+                p.vy = (p.y - p.py) / subdt;
+
+                // 地面摩擦与微弱弹力
+                if (p.y >= height - 5.01 && p.vy > 0) {
+                    p.vy = -p.vy * 0.1;
+                    p.vx *= 0.8; // 水平摩擦
+                }
+                // 墙壁摩擦
+                if ((p.x <= 5.01 || p.x >= width - 5.01)) {
+                    p.vx = -p.vx * 0.1;
+                    p.vy *= 0.8;
+                }
+
+                // 全局空气阻力
+                p.vx *= 0.999;
+                p.vy *= 0.999;
+            }
+
+            // 4. 每个球独立抑制静止态微漂移（仅在低速时启用）
+            const driftBlend = 0.02;
+            const driftSpeedThreshold = 40;
+            const driftMeanVxThreshold = 8;
+            for (let b = 0; b < balls.length; b++) {
+                const pts = balls[b].particles;
+                let hasDragNode = false;
+                for (let i = 0; i < pts.length; i++) {
+                    if (pts[i] === dragNode) {
+                        hasDragNode = true;
+                        break;
+                    }
+                }
+                if (hasDragNode) continue;
+
+                let sumVx = 0;
+                let sumVy = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    sumVx += pts[i].vx;
+                    sumVy += pts[i].vy;
+                }
+                const meanVx = sumVx / pts.length;
+                const meanVy = sumVy / pts.length;
+                const meanSpeed = Math.hypot(meanVx, meanVy);
+
+                if (meanSpeed > driftSpeedThreshold || Math.abs(meanVx) > driftMeanVxThreshold) {
+                    continue;
+                }
+
+                for (let i = 0; i < pts.length; i++) {
+                    pts[i].vx -= meanVx * driftBlend;
+                }
+            }
+
+        }
+    }
+
+    // ==========================================
+    // 渲染循环
+    // ==========================================
+    
+    function lerpColor(a, b, t) {
+        const parse = hex => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+        const ca = parse(a), cb = parse(b);
+        const m = i => Math.round(ca[i] + (cb[i] - ca[i]) * t);
+        return `rgb(${m(0)},${m(1)},${m(2)})`;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+
+        for (const e of enemies) {
+            if (!e.alive) continue;
+            ctx.fillStyle = ENEMY_FILL[e.colorId] || '#aaa';
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        for (const fx of burstFx) {
+            ctx.strokeStyle = `rgba(255,200,80,${fx.life * 2})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(fx.x, fx.y, fx.r, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        for (const ball of balls) {
+            if (!ball.alive) continue;
+            const pts = ball.particles;
+            if (pts.length === 0) continue;
+
+            let cx = 0, cy = 0;
+            for (const p of pts) { cx += p.x; cy += p.y; }
+            cx /= pts.length;
+            cy /= pts.length;
+
+            if (ball.air >= GAME_CFG.AIR_CRIT_MIN && ball.air < GAME_CFG.AIR_BURST) {
+                ball.shakeT += 0.2;
+                const s = (ball.air - GAME_CFG.AIR_CRIT_MIN) / 35;
+                cx += Math.sin(ball.shakeT * 3) * s * 2.5;
+                cy += Math.cos(ball.shakeT * 2.7) * s * 2;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.closePath();
+
+            let base = ball.colorBase;
+            let light = ball.colorLight;
+            if (ball.air >= GAME_CFG.AIR_CRIT_MIN) {
+                const t = Math.min(1, (ball.air - GAME_CFG.AIR_CRIT_MIN) / 30);
+                base = lerpColor(ball.colorBase, '#ff2222', t);
+                light = lerpColor(ball.colorLight, '#ffaaaa', t * 0.7);
+            }
+
+            const grad = ctx.createRadialGradient(
+                cx - ball.radius * 0.3, cy - ball.radius * 0.3, ball.radius * 0.1,
+                cx, cy, ball.radius * 1.15
+            );
+            grad.addColorStop(0, light);
+            grad.addColorStop(1, base);
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.lineWidth = ball === selectedBall ? 5 : 3;
+            ctx.strokeStyle = ball === selectedBall ? 'rgba(255,255,120,0.95)' : 'rgba(255,255,255,0.5)';
+            ctx.stroke();
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 22px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(String(Math.round(ball.air)), cx, cy + 8);
+            ctx.textAlign = 'left';
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.font = '15px system-ui, sans-serif';
+        const hint = gamePhase === GamePhase.LINEUP
+            ? '空格/回车：开始落下敌人  |  点击气球选中并打气（战斗阶段）'
+            : '点击打气（长按连打）  |  空格开始  |  R 重置';
+        ctx.fillText(`阶段: ${phaseLabels[gamePhase]}  |  能量 ${Math.floor(energy)}/${maxEnergy}  |  漏过 ${escapedCount}/${failThreshold}`, 12, 24);
+        ctx.fillText(hint, 12, 46);
+        if (gamePhase === GamePhase.WIN) ctx.fillText('胜利！按 R 重开', 12, height - 20);
+        if (gamePhase === GamePhase.LOSE) ctx.fillText('失败…按 R 重开', 12, height - 20);
+    }
+
+    function loop() {
+        updateGame(dt);
+        updatePhysics();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    // 启动循环
+    loop();
+
+</script>
+</body>
+</html>

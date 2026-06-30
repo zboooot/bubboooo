@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>气球雨 · 9:20 · v1.3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --stage-w: 360;
+            --stage-h: 800;
+            --bg-outer: #0f0f1a;
+            --accent: #ff6b9d;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg-outer);
+            touch-action: none;
+            font-family: "ZCOOL KuaiLe", system-ui, sans-serif;
+        }
+
+        #viewport {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255, 107, 157, 0.12), transparent),
+                radial-gradient(ellipse 60% 40% at 80% 100%, rgba(0, 243, 255, 0.08), transparent),
+                var(--bg-outer);
+        }
+
+        #stage {
+            position: relative;
+            aspect-ratio: 9 / 20;
+            height: 100vh;
+            max-height: 100dvh;
+            max-width: calc(100dvh * 9 / 20);
+            width: min(100vw, calc(100dvh * 9 / 20));
+            box-shadow:
+                0 0 0 1px rgba(255, 255, 255, 0.06),
+                0 24px 80px rgba(0, 0, 0, 0.55);
+            border-radius: clamp(12px, 2vw, 20px);
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #hud {
+            position: absolute;
+            top: 12px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            pointer-events: none;
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 13px;
+            letter-spacing: 0.08em;
+            text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+        }
+
+        #hud span {
+            color: var(--accent);
+        }
+
+        #versionTag {
+            position: absolute;
+            bottom: 112px;
+            right: 12px;
+            pointer-events: none;
+            color: rgba(255, 255, 255, 0.28);
+            font-size: 11px;
+            letter-spacing: 0.06em;
+        }
+    </style>
+</head>
+<body>
+    <div id="viewport">
+        <div id="stage">
+            <canvas id="physicsCanvas"></canvas>
+            <div id="hud">按住气球充气 · 底部为各色气量 · <span id="ballCount">0</span></div>
+            <div id="versionTag"></div>
+        </div>
+    </div>
+
+<script>
+    const APP_VERSION = '1.3';
+    const APP_VERSION_DATE = '2026-06-30';
+
+    const LOGICAL_WIDTH = 360;
+    const LOGICAL_HEIGHT = 800;
+
+    const canvas = document.getElementById('physicsCanvas');
+    const ctx = canvas.getContext('2d');
+    const ballCountEl = document.getElementById('ballCount');
+    const versionTagEl = document.getElementById('versionTag');
+    if (versionTagEl) versionTagEl.textContent = `v${APP_VERSION}`;
+
+    canvas.width = LOGICAL_WIDTH;
+    canvas.height = LOGICAL_HEIGHT;
+
+    const width = LOGICAL_WIDTH;
+    const height = LOGICAL_HEIGHT;
+
+    const gravity = { x: 0, y: 1500 };
+    const numSubsteps = 6;
+    const pbdIterations = 2;
+    const dt = 1 / 60;
+
+    const MIN_BALLOON_RADIUS = 36;
+    const MAX_BALLOON_RADIUS = 68;
+    const BALLOON_PACK_GAP = 5;
+    const BALLOON_COUNT_MULTIPLIER = 1.3;
+    const BALLOON_FIELD_PAD_X = 16;
+    const BALLOON_FIELD_PAD_TOP = 12;
+    const BALLOON_FIELD_PAD_BOTTOM = 8;
+    const SMALL_BALLOON_AIR_START = 12;
+    const SMALL_BALLOON_AIR_END = 99;
+    const SMALL_BALLOON_RADIUS_MUL_AT_MAX_AIR = 0.6;
+    const PARTICLES_PER_BALLOON = 20;
+    const AIR_CAPACITY = 100;
+    const PUMP_AIR_RATE = 164;
+    const INFLATE_MAX_SCALE = 1.842;
+    const FULL_POP_DELAY = 0.2;
+    const CHAIN_POP_INTERVAL = 0.07;
+    const CHAIN_PARTICLE_TOUCH = 16;
+    const DRAG_MOVE_THRESHOLD = 12;
+    const SHAKE_MIN_AIR_DELTA = 0.4;
+
+    const PUMP_ZONE_HEIGHT = 100;
+    const GROUND_Y = LOGICAL_HEIGHT - PUMP_ZONE_HEIGHT;
+
+    const TEAM_COLORS = [
+        { colorBase: '#d91e48', colorLight: '#ff6b85', defaultPump: 35 },
+        { colorBase: '#7b2fd4', colorLight: '#c49bff', defaultPump: 28 }
+    ];
+
+    let selectedPumpIndex = 0;
+    let pumpFuelRemaining = TEAM_COLORS.map((t) => t.defaultPump);
+    const pumpHitRects = [];
+
+    const particles = [];
+    const constraints = [];
+    const balls = [];
+    const popEffects = [];
+
+    let chainPopQueue = [];
+    let chainPopVisited = null;
+    let chainPopAccum = 0;
+
+    let collisionOrderFlip = false;
+    let collisionPhase = 0;
+    let constraintOrderFlip = false;
+    let simTime = 0;
+
+    class Particle {
+        constructor(x, y, mass) {
+            this.x = x;
+            this.y = y;
+            this.px = x;
+            this.py = y;
+            this.vx = 0;
+            this.vy = 0;
+            this.mass = mass;
+            this.invMass = mass > 0 ? 1 / mass : 0;
+        }
+    }
+
+    class DistanceConstraint {
+        constructor(p1, p2, stiffness = 1.0) {
+            this.p1 = p1;
+            this.p2 = p2;
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            this.restLength = Math.hypot(dx, dy);
+            this.initialRestLength = this.restLength;
+            this.stiffness = stiffness;
+            this.baseStiffness = stiffness;
+        }
+
+        solve() {
+            const dx = this.p1.x - this.p2.x;
+            const dy = this.p1.y - this.p2.y;
+            const d = Math.hypot(dx, dy);
+            if (d === 0) return;
+
+            const diff = (d - this.restLength) / d;
+            const w1 = this.p1.invMass;
+            const w2 = this.p2.invMass;
+            const w = w1 + w2;
+            if (w === 0) return;
+
+            const corrX = dx * diff * this.stiffness / w;
+            const corrY = dy * diff * this.stiffness / w;
+
+            this.p1.x -= corrX * w1;
+            this.p1.y -= corrY * w1;
+            this.p2.x += corrX * w2;
+            this.p2.y += corrY * w2;
+        }
+    }
+
+    class AreaConstraint {
+        constructor(particles, stiffness = 1.0) {
+            this.particles = particles;
+            this.stiffness = stiffness;
+            this.restArea = this.calculateArea();
+            this.baseRestArea = this.restArea;
+        }
+
+        calculateArea() {
+            let area = 0;
+            const N = this.particles.length;
+            for (let i = 0; i < N; i++) {
+                const p = this.particles[i];
+                const pNext = this.particles[(i + 1) % N];
+                area += (p.x * pNext.y - pNext.x * p.y);
+            }
+            return 0.5 * area;
+        }
+
+        solve() {
+            const N = this.particles.length;
+            const currentArea = this.calculateArea();
+            const deltaArea = currentArea - this.restArea;
+
+            let sumWGrad2 = 0;
+            const gradients = new Array(N);
+
+            for (let i = 0; i < N; i++) {
+                const pNext = this.particles[(i + 1) % N];
+                const pPrev = this.particles[(i - 1 + N) % N];
+                gradients[i] = {
+                    x: 0.5 * (pNext.y - pPrev.y),
+                    y: 0.5 * (pPrev.x - pNext.x)
+                };
+                const w = this.particles[i].invMass;
+                sumWGrad2 += w * (gradients[i].x ** 2 + gradients[i].y ** 2);
+            }
+
+            if (sumWGrad2 < 0.00001) return;
+
+            const lambda = -deltaArea / sumWGrad2 * this.stiffness;
+
+            for (let i = 0; i < N; i++) {
+                const p = this.particles[i];
+                const w = p.invMass;
+                p.x += lambda * w * gradients[i].x;
+                p.y += lambda * w * gradients[i].y;
+            }
+        }
+    }
+
+    function pickTeamColor(index = -1) {
+        if (index >= 0) return TEAM_COLORS[index % 2];
+        return TEAM_COLORS[Math.random() < 0.5 ? 0 : 1];
+    }
+
+    function floorLimitY() {
+        return GROUND_Y - 5;
+    }
+
+    function isInPumpZone(y) {
+        return y >= GROUND_Y;
+    }
+
+    function teamIndexForColor(colorBase) {
+        for (let i = 0; i < TEAM_COLORS.length; i++) {
+            if (TEAM_COLORS[i].colorBase === colorBase) return i;
+        }
+        return -1;
+    }
+
+    function pumpFuelForBall(ball) {
+        const idx = teamIndexForColor(ball.colorBase);
+        if (idx < 0) return 0;
+        return pumpFuelRemaining[idx];
+    }
+
+    function canPumpBall(ball) {
+        return pumpFuelForBall(ball) > 0;
+    }
+
+    function selectPumpForBall(ball) {
+        const idx = teamIndexForColor(ball.colorBase);
+        if (idx >= 0) selectedPumpIndex = idx;
+        return idx;
+    }
+
+    function layoutPumpHitRects() {
+        pumpHitRects.length = 0;
+        const dockTop = GROUND_Y + 8;
+        const iconW = 72;
+        const iconH = 78;
+        const gap = 18;
+        const totalW = iconW * 2 + gap;
+        const startX = (width - totalW) * 0.5;
+        for (let i = 0; i < TEAM_COLORS.length; i++) {
+            pumpHitRects.push({
+                index: i,
+                x: startX + i * (iconW + gap),
+                y: dockTop,
+                w: iconW,
+                h: iconH
+            });
+        }
+    }
+
+    function pickPumpAt(x, y) {
+        for (let i = 0; i < pumpHitRects.length; i++) {
+            const r = pumpHitRects[i];
+            if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r.index;
+        }
+        return -1;
+    }
+
+    function strokeRoundRect(x, y, w, h, r) {
+        const rr = Math.min(r, w * 0.5, h * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.lineTo(x + w - rr, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+        ctx.lineTo(x + w, y + h - rr);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+        ctx.lineTo(x + rr, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+        ctx.lineTo(x, y + rr);
+        ctx.quadraticCurveTo(x, y, x + rr, y);
+        ctx.closePath();
+    }
+
+    function drawPumpIcon(x, y, w, h, tool, index, selected, fuelRemaining) {
+        const empty = fuelRemaining <= 0;
+        const cx = x + w * 0.4;
+        const baseY = y + h - 9;
+        const barrelW = w * 0.3;
+        const barrelH = h * 0.46;
+        const barrelTop = baseY - barrelH - 3;
+        const metal = '#8b93a8';
+        const metalDark = '#4d5568';
+
+        ctx.save();
+        if (empty) ctx.globalAlpha = 0.42;
+        if (selected && !empty) {
+            ctx.shadowColor = tool.colorLight;
+            ctx.shadowBlur = 10;
+        }
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+        strokeRoundRect(x + 2, y + 3, w - 4, h - 6, 10);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(35, 38, 52, 0.95)';
+        ctx.beginPath();
+        ctx.ellipse(cx, baseY, barrelW * 0.72, 5.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = metalDark;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        const barrelGrad = ctx.createLinearGradient(cx - barrelW * 0.5, barrelTop, cx + barrelW * 0.5, barrelTop);
+        barrelGrad.addColorStop(0, tool.colorBase);
+        barrelGrad.addColorStop(0.45, tool.colorLight);
+        barrelGrad.addColorStop(1, tool.colorBase);
+        ctx.fillStyle = barrelGrad;
+        strokeRoundRect(cx - barrelW * 0.5, barrelTop, barrelW, barrelH, barrelW * 0.35);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+        strokeRoundRect(cx - barrelW * 0.34, barrelTop + 4, barrelW * 0.1, barrelH - 10, 2);
+        ctx.fill();
+
+        const stemW = barrelW * 0.34;
+        const stemH = 7;
+        const handleY = barrelTop - stemH;
+        ctx.fillStyle = metalDark;
+        strokeRoundRect(cx - stemW * 0.5, handleY, stemW, stemH, 3);
+        ctx.fill();
+        ctx.fillStyle = metal;
+        strokeRoundRect(cx - barrelW * 0.95, handleY - 5, barrelW * 1.9, 5, 2.5);
+        ctx.fill();
+
+        const hoseX0 = cx + barrelW * 0.42;
+        const hoseY0 = barrelTop + barrelH * 0.58;
+        const nozzleX = x + w - 10;
+        const nozzleY = baseY - 14;
+        ctx.strokeStyle = tool.colorBase;
+        ctx.lineWidth = 4.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(hoseX0, hoseY0);
+        ctx.bezierCurveTo(cx + w * 0.35, hoseY0 - 2, x + w * 0.55, nozzleY + 6, nozzleX - 4, nozzleY);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(hoseX0, hoseY0 - 1);
+        ctx.bezierCurveTo(cx + w * 0.35, hoseY0 - 3, x + w * 0.55, nozzleY + 4, nozzleX - 4, nozzleY - 1);
+        ctx.stroke();
+
+        ctx.fillStyle = metal;
+        ctx.beginPath();
+        ctx.arc(nozzleX, nozzleY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = metalDark;
+        ctx.beginPath();
+        ctx.arc(nozzleX + 1.5, nozzleY, 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = selected ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = selected ? 2.5 : 1.5;
+        strokeRoundRect(x + 2, y + 3, w - 4, h - 6, 10);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        const num = empty ? '0' : String(Math.max(0, Math.ceil(fuelRemaining)));
+        const labelY = barrelTop + barrelH * 0.52;
+        const fontSize = Math.max(14, Math.min(20, barrelW * 0.95));
+        ctx.font = `bold ${fontSize}px "ZCOOL KuaiLe", system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillStyle = empty ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.98)';
+        ctx.strokeText(num, cx, labelY);
+        ctx.fillText(num, cx, labelY);
+        ctx.restore();
+    }
+
+    function drawPumpDock() {
+        const dockGrad = ctx.createLinearGradient(0, GROUND_Y, 0, height);
+        dockGrad.addColorStop(0, 'rgba(18, 18, 32, 0.92)');
+        dockGrad.addColorStop(1, 'rgba(8, 8, 16, 0.98)');
+        ctx.fillStyle = dockGrad;
+        ctx.fillRect(0, GROUND_Y, width, PUMP_ZONE_HEIGHT);
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, GROUND_Y + 0.5);
+        ctx.lineTo(width, GROUND_Y + 0.5);
+        ctx.stroke();
+
+        layoutPumpHitRects();
+        for (let i = 0; i < TEAM_COLORS.length; i++) {
+            const r = pumpHitRects[i];
+            drawPumpIcon(
+                r.x, r.y, r.w, r.h, TEAM_COLORS[i], i,
+                selectedPumpIndex === i, pumpFuelRemaining[i]
+            );
+        }
+    }
+
+    function createSoftBall(cx, cy, radius, colorBase, colorLight, initialVelocity = null) {
+        const N = PARTICLES_PER_BALLOON;
+        const ballParticles = [];
+
+        for (let i = 0; i < N; i++) {
+            const angle = (i / N) * Math.PI * 2;
+            const px = cx + Math.cos(angle) * radius;
+            const py = cy + Math.sin(angle) * radius;
+            const p = new Particle(px, py, 1.0);
+            if (initialVelocity) {
+                p.vx = initialVelocity.vx;
+                p.vy = initialVelocity.vy;
+            }
+            ballParticles.push(p);
+            particles.push(p);
+        }
+
+        const distanceConstraints = [];
+        for (let i = 0; i < N; i++) {
+            const c1 = new DistanceConstraint(ballParticles[i], ballParticles[(i + 1) % N], 1.0);
+            const c2 = new DistanceConstraint(ballParticles[i], ballParticles[(i + 2) % N], 0.8);
+            constraints.push(c1, c2);
+            distanceConstraints.push(c1, c2);
+        }
+        const areaConstraint = new AreaConstraint(ballParticles, 1.0);
+        constraints.push(areaConstraint);
+
+        const solverConstraints = distanceConstraints.concat([areaConstraint]);
+
+        balls.push({
+            particles: ballParticles,
+            radius,
+            baseRadius: radius,
+            colorBase,
+            colorLight,
+            inflate: 0,
+            fillAtRestBase: 0,
+            restVisualScale: 1,
+            air: AIR_CAPACITY,
+            imminentPopDelay: null,
+            distanceConstraints,
+            areaConstraint,
+            solverConstraints,
+            cx,
+            cy
+        });
+    }
+
+    function refreshBallCentroids() {
+        for (let b = 0; b < balls.length; b++) {
+            const ball = balls[b];
+            const pts = ball.particles;
+            let cx = 0;
+            let cy = 0;
+            for (let i = 0; i < pts.length; i++) {
+                cx += pts[i].x;
+                cy += pts[i].y;
+            }
+            ball.cx = cx / pts.length;
+            ball.cy = cy / pts.length;
+        }
+    }
+
+    function solveBallConstraints() {
+        if (!constraintOrderFlip) {
+            for (let b = 0; b < balls.length; b++) {
+                const list = balls[b].solverConstraints;
+                for (let i = 0; i < list.length; i++) list[i].solve();
+            }
+        } else {
+            for (let b = balls.length - 1; b >= 0; b--) {
+                const list = balls[b].solverConstraints;
+                for (let i = list.length - 1; i >= 0; i--) list[i].solve();
+            }
+        }
+        constraintOrderFlip = !constraintOrderFlip;
+    }
+
+    function airToFillRatio(air) {
+        const clamped = Math.max(0, Math.min(AIR_CAPACITY, air));
+        return 1 - clamped / AIR_CAPACITY;
+    }
+
+    function smallBalloonRadiusMul(air) {
+        if (air <= SMALL_BALLOON_AIR_START) return 1;
+        if (air >= SMALL_BALLOON_AIR_END) return SMALL_BALLOON_RADIUS_MUL_AT_MAX_AIR;
+        const t = (air - SMALL_BALLOON_AIR_START) / (SMALL_BALLOON_AIR_END - SMALL_BALLOON_AIR_START);
+        return 1 - 0.4 * t;
+    }
+
+    function visualScaleFromAir(air) {
+        const fill = airToFillRatio(air);
+        const baseScale = 1 + fill * (INFLATE_MAX_SCALE - 1);
+        return baseScale * smallBalloonRadiusMul(air);
+    }
+
+    function currentInflateScale(ball) {
+        return visualScaleFromAir(ball.air);
+    }
+
+    function applyBallAirVisual(ball) {
+        ball.inflate = airToFillRatio(ball.air);
+        applyInflationTargets(ball);
+    }
+
+    function schedulePopIfEmpty(ball) {
+        if (ball.air > 0) return;
+        if (ball.imminentPopDelay == null) ball.imminentPopDelay = FULL_POP_DELAY;
+    }
+
+    function randomInitialAir() {
+        return 12 + Math.floor(Math.random() * 89);
+    }
+
+    function updateImminentPops() {
+        for (let i = balls.length - 1; i >= 0; i--) {
+            const ball = balls[i];
+            if (ball.imminentPopDelay == null) continue;
+            ball.imminentPopDelay -= dt;
+            if (ball.imminentPopDelay <= 0) {
+                ball.imminentPopDelay = null;
+                refreshBallCentroids();
+                for (let bi = 0; bi < balls.length; bi++) syncBallBounds(balls[bi]);
+                popBalloon(ball);
+            }
+        }
+    }
+
+    function applyInflationTargets(ball) {
+        const targetScale = visualScaleFromAir(ball.air);
+        const baseScale = ball.restVisualScale || targetScale;
+        const rel = baseScale > 1e-6 ? targetScale / baseScale : targetScale;
+        const areaScale = rel * rel;
+        ball.areaConstraint.restArea = ball.areaConstraint.baseRestArea * areaScale;
+        for (const dc of ball.distanceConstraints) {
+            dc.restLength = dc.initialRestLength * rel;
+        }
+        ball.radius = ball.baseRadius * rel;
+
+        const wobble = ball.inflate * ball.inflate;
+        const pulse = Math.sin(simTime * (8 + wobble * 28)) * wobble;
+        ball.areaConstraint.stiffness = Math.max(0.35, 1 - wobble * 0.55 + pulse * 0.2);
+        for (const dc of ball.distanceConstraints) {
+            dc.stiffness = dc.baseStiffness * Math.max(0.4, 1 - wobble * 0.45);
+        }
+    }
+
+    function applyInflationShake(ball) {
+        if (ball.inflate <= 0.12) return;
+        const pts = ball.particles;
+        const c = polygonCentroid(pts);
+        const wobble = ball.inflate * ball.inflate;
+        const mag = (6 + wobble * 220) * dt;
+        const spin = simTime * (14 + wobble * 40);
+
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            const nx = p.x - c.x;
+            const ny = p.y - c.y;
+            const len = Math.hypot(nx, ny) || 1;
+            const tx = -ny / len;
+            const ty = nx / len;
+            const wave = Math.sin(spin + i * 0.85) * wobble;
+            p.vx += tx * wave * mag + (Math.random() - 0.5) * mag * 1.6;
+            p.vy += ty * wave * mag + (Math.random() - 0.5) * mag * 1.6;
+        }
+    }
+
+    function resetChainPopState() {
+        chainPopQueue = [];
+        chainPopVisited = null;
+        chainPopAccum = 0;
+    }
+
+    function ensureChainVisited() {
+        if (!chainPopVisited) chainPopVisited = new Set();
+    }
+
+    function syncBallBounds(ball) {
+        const pts = ball.particles;
+        let cx = 0;
+        let cy = 0;
+        for (let i = 0; i < pts.length; i++) {
+            cx += pts[i].x;
+            cy += pts[i].y;
+        }
+        cx /= pts.length;
+        cy /= pts.length;
+        let maxR = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const r = Math.hypot(pts[i].x - cx, pts[i].y - cy);
+            if (r > maxR) maxR = r;
+        }
+        ball.cx = cx;
+        ball.cy = cy;
+        ball.boundsRadius = maxR;
+        return ball;
+    }
+
+    function minParticleGap(ballA, ballB) {
+        const pa = ballA.particles;
+        const pb = ballB.particles;
+        let best = Infinity;
+        for (let i = 0; i < pa.length; i++) {
+            const ax = pa[i].x;
+            const ay = pa[i].y;
+            for (let j = 0; j < pb.length; j++) {
+                const d = Math.hypot(ax - pb[j].x, ay - pb[j].y);
+                if (d < best) best = d;
+            }
+        }
+        return best;
+    }
+
+    function ballsPhysicallyTouch(ballA, ballB) {
+        if (minParticleGap(ballA, ballB) <= CHAIN_PARTICLE_TOUCH) return true;
+        syncBallBounds(ballA);
+        syncBallBounds(ballB);
+        const dist = Math.hypot(ballA.cx - ballB.cx, ballA.cy - ballB.cy);
+        return dist <= ballA.boundsRadius + ballB.boundsRadius + CHAIN_PARTICLE_TOUCH * 0.5;
+    }
+
+    function getTouchingSameColorNeighbors(ball) {
+        syncBallBounds(ball);
+        const neighbors = [];
+        for (let i = 0; i < balls.length; i++) {
+            const other = balls[i];
+            if (other === ball || other.colorBase !== ball.colorBase) continue;
+            if (!ballsPhysicallyTouch(ball, other)) continue;
+            neighbors.push({ ball: other, gap: minParticleGap(ball, other) });
+        }
+        neighbors.sort((a, b) => a.gap - b.gap);
+        return neighbors.map((n) => n.ball);
+    }
+
+    function enqueueChainNeighbors(ball, neighbors) {
+        ensureChainVisited();
+        for (let i = 0; i < neighbors.length; i++) {
+            const n = neighbors[i];
+            if (!balls.includes(n) || chainPopVisited.has(n)) continue;
+            chainPopVisited.add(n);
+            chainPopQueue.push(n);
+        }
+    }
+
+    function processChainPops() {
+        if (!chainPopQueue.length) return;
+        chainPopAccum += dt;
+        if (chainPopAccum < CHAIN_POP_INTERVAL) return;
+        chainPopAccum -= CHAIN_POP_INTERVAL;
+
+        const next = chainPopQueue.shift();
+        if (next && balls.includes(next)) popBalloon(next, true);
+    }
+
+    function spawnPopEffect(ball) {
+        const c = polygonCentroid(ball.particles);
+        for (let i = 0; i < 18; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 80 + Math.random() * 260;
+            popEffects.push({
+                x: c.x,
+                y: c.y,
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp,
+                life: 0.55 + Math.random() * 0.35,
+                maxLife: 1,
+                color: ball.colorLight,
+                size: 2 + Math.random() * 4
+            });
+        }
+    }
+
+    function popBalloon(ball, fromChain = false) {
+        if (!balls.includes(ball)) return;
+
+        if (!fromChain) resetChainPopState();
+        ensureChainVisited();
+        chainPopVisited.add(ball);
+
+        const neighbors = getTouchingSameColorNeighbors(ball);
+        spawnPopEffect(ball);
+        const idx = balls.indexOf(ball);
+        if (idx >= 0) destroyBall(idx);
+        updateBallCount();
+        enqueueChainNeighbors(ball, neighbors);
+    }
+
+    function updateBallCount() {
+        ballCountEl.textContent = String(balls.length);
+    }
+
+    function destroyBall(index) {
+        const ball = balls[index];
+        const set = new Set(ball.particles);
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            if (set.has(particles[i])) particles.splice(i, 1);
+        }
+
+        for (let i = constraints.length - 1; i >= 0; i--) {
+            const c = constraints[i];
+            if (c instanceof AreaConstraint) {
+                if (c.particles === ball.particles) constraints.splice(i, 1);
+            } else if (c instanceof DistanceConstraint) {
+                if (set.has(c.p1) || set.has(c.p2)) constraints.splice(i, 1);
+            }
+        }
+
+        if (dragNode && set.has(dragNode)) dragNode = null;
+        if (activeInflateBall === ball) activeInflateBall = null;
+        balls.splice(index, 1);
+    }
+
+    function syncBallRestState(ball) {
+        const pts = ball.particles;
+        let cx = 0;
+        let cy = 0;
+        for (let i = 0; i < pts.length; i++) {
+            cx += pts[i].x;
+            cy += pts[i].y;
+        }
+        cx /= pts.length;
+        cy /= pts.length;
+
+        let avgR = 0;
+        for (let i = 0; i < pts.length; i++) {
+            avgR += Math.hypot(pts[i].x - cx, pts[i].y - cy);
+        }
+        avgR /= pts.length;
+
+        ball.cx = cx;
+        ball.cy = cy;
+        ball.radius = avgR;
+        ball.baseRadius = avgR;
+
+        const area = ball.areaConstraint.calculateArea();
+        ball.areaConstraint.restArea = area;
+        ball.areaConstraint.baseRestArea = area;
+
+        for (let i = 0; i < ball.distanceConstraints.length; i++) {
+            const dc = ball.distanceConstraints[i];
+            const dx = dc.p1.x - dc.p2.x;
+            const dy = dc.p1.y - dc.p2.y;
+            const len = Math.hypot(dx, dy);
+            dc.restLength = len;
+            dc.initialRestLength = len;
+        }
+
+        ball.fillAtRestBase = airToFillRatio(ball.air);
+        ball.restVisualScale = visualScaleFromAir(ball.air);
+        ball.areaConstraint.restArea = ball.areaConstraint.baseRestArea;
+        for (let i = 0; i < ball.distanceConstraints.length; i++) {
+            ball.distanceConstraints[i].restLength = ball.distanceConstraints[i].initialRestLength;
+        }
+    }
+
+    function reshapeBallToCircle(ball, radius) {
+        const pts = ball.particles;
+        const n = pts.length;
+        const cx = ball.cx;
+        const cy = ball.cy;
+
+        for (let i = 0; i < n; i++) {
+            const angle = (i / n) * Math.PI * 2;
+            pts[i].x = cx + Math.cos(angle) * radius;
+            pts[i].y = cy + Math.sin(angle) * radius;
+            pts[i].vx = 0;
+            pts[i].vy = 0;
+            pts[i].px = pts[i].x;
+            pts[i].py = pts[i].y;
+        }
+
+        ball.radius = radius;
+        ball.baseRadius = radius;
+    }
+
+    function localRelaxBall(ball, iterations) {
+        for (let k = 0; k < iterations; k++) {
+            const list = ball.solverConstraints;
+            for (let i = 0; i < list.length; i++) list[i].solve();
+        }
+    }
+
+    function clamp(v, lo, hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    function estimateMeanBalloonRadius() {
+        const meanAir = (12 + 100) * 0.5;
+        return MIN_BALLOON_RADIUS * visualScaleFromAir(meanAir);
+    }
+
+    function computeBalloonFillLayout() {
+        const playW = width - BALLOON_FIELD_PAD_X * 2;
+        const playH = GROUND_Y - BALLOON_FIELD_PAD_TOP - BALLOON_FIELD_PAD_BOTTOM;
+        const r = estimateMeanBalloonRadius();
+        const pitchX = 2 * r + BALLOON_PACK_GAP;
+        const pitchY = pitchX * (Math.sqrt(3) * 0.5);
+
+        let cols = Math.max(1, Math.floor((playW - 2 * r) / pitchX) + 1);
+        let rows = Math.max(1, Math.floor((playH - 2 * r) / pitchY) + 1);
+
+        while (cols > 1 && (cols - 1) * pitchX + 2 * r > playW + 1) cols--;
+        while (rows > 1 && (rows - 1) * pitchY + 2 * r > playH + 1) rows--;
+
+        const gridCount = cols * rows;
+        const count = Math.max(gridCount, Math.round(gridCount * BALLOON_COUNT_MULTIPLIER));
+        const spawnRows = Math.ceil(count / cols);
+        const spanX = cols > 1 ? (cols - 1) * pitchX : 0;
+        const spanY = spawnRows > 1 ? (spawnRows - 1) * pitchY : 0;
+        const originX = BALLOON_FIELD_PAD_X + (playW - spanX) * 0.5;
+        const originY = BALLOON_FIELD_PAD_TOP + (playH - spanY) * 0.5;
+
+        return {
+            count,
+            gridCount,
+            cols,
+            rows: spawnRows,
+            r,
+            pitchX,
+            pitchY,
+            originX,
+            originY
+        };
+    }
+
+    function spawnInitialBalloons() {
+        const layout = computeBalloonFillLayout();
+
+        for (let i = 0; i < layout.count; i++) {
+            const col = i % layout.cols;
+            const row = Math.floor(i / layout.cols);
+            const stagger = (row % 2) * (layout.pitchX * 0.5);
+            const cx = layout.originX + col * layout.pitchX + stagger;
+            const cy = layout.originY + row * layout.pitchY;
+
+            const { colorBase, colorLight } = pickTeamColor(Math.floor(i / 2));
+            const air = randomInitialAir();
+            const seedRadius = MIN_BALLOON_RADIUS;
+            createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
+            const ball = balls[balls.length - 1];
+            ball.air = air;
+            applyBallAirVisual(ball);
+            const visualR = seedRadius * currentInflateScale(ball);
+            reshapeBallToCircle(ball, visualR);
+            localRelaxBall(ball, 10);
+            syncBallRestState(ball);
+            schedulePopIfEmpty(ball);
+        }
+
+        refreshBallCentroids();
+        updateBallCount();
+    }
+
+    spawnInitialBalloons();
+
+
+    let dragNode = null;
+    let pendingDragParticle = null;
+    let activeInflateBall = null;
+    let pointerDown = false;
+    let pointerDownPos = { x: 0, y: 0 };
+    let mouse = { x: 0, y: 0 };
+
+    function screenToLogical(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left) * (width / rect.width),
+            y: (clientY - rect.top) * (height / rect.height)
+        };
+    }
+
+    function pickBalloonAt(x, y) {
+        if (isInPumpZone(y)) return null;
+        for (let i = balls.length - 1; i >= 0; i--) {
+            const pts = balls[i].particles;
+            if (pointInPolygon(x, y, pts)) return balls[i];
+            const c = polygonCentroid(pts);
+            const dist = Math.hypot(x - c.x, y - c.y);
+            if (dist < balls[i].radius * 1.05) return balls[i];
+        }
+        return null;
+    }
+
+    function startDrag(clientX, clientY) {
+        const pos = screenToLogical(clientX, clientY);
+        mouse.x = pos.x;
+        mouse.y = pos.y;
+        pointerDownPos.x = pos.x;
+        pointerDownPos.y = pos.y;
+        pointerDown = true;
+        dragNode = null;
+        pendingDragParticle = null;
+
+        if (isInPumpZone(mouse.y)) {
+            const pumpIdx = pickPumpAt(mouse.x, mouse.y);
+            if (pumpIdx >= 0) selectedPumpIndex = pumpIdx;
+            return;
+        }
+
+        const hitBall = pickBalloonAt(mouse.x, mouse.y);
+        if (hitBall) {
+            const idx = selectPumpForBall(hitBall);
+            if (idx >= 0 && pumpFuelRemaining[idx] > 0) activeInflateBall = hitBall;
+            return;
+        }
+        activeInflateBall = null;
+
+        let minDist = 42;
+        for (const p of particles) {
+            const dist = Math.hypot(p.x - mouse.x, p.y - mouse.y);
+            if (dist < minDist) {
+                minDist = dist;
+                pendingDragParticle = p;
+            }
+        }
+    }
+
+    function moveDrag(clientX, clientY) {
+        const pos = screenToLogical(clientX, clientY);
+        mouse.x = pos.x;
+        mouse.y = pos.y;
+
+        if (!pointerDown || activeInflateBall || dragNode || !pendingDragParticle) return;
+        const moved = Math.hypot(mouse.x - pointerDownPos.x, mouse.y - pointerDownPos.y);
+        if (moved >= DRAG_MOVE_THRESHOLD) {
+            dragNode = pendingDragParticle;
+            pendingDragParticle = null;
+        }
+    }
+
+    function endDrag() {
+        dragNode = null;
+        pendingDragParticle = null;
+        activeInflateBall = null;
+        pointerDown = false;
+    }
+
+    function updateInflation() {
+        if (!pointerDown || !activeInflateBall) return;
+        if (!balls.includes(activeInflateBall)) {
+            activeInflateBall = null;
+            return;
+        }
+
+        const ball = activeInflateBall;
+        const pumpIdx = teamIndexForColor(ball.colorBase);
+        if (pumpIdx < 0 || pumpFuelRemaining[pumpIdx] <= 0) {
+            activeInflateBall = null;
+            return;
+        }
+
+        const airBefore = ball.air;
+        const fill = airToFillRatio(ball.air);
+        const ease = Math.pow(Math.max(0, 1 - fill), 3.2);
+        const speedFactor = Math.max(0.15, ease);
+        const want = PUMP_AIR_RATE * speedFactor * dt;
+        const used = Math.min(want, ball.air, pumpFuelRemaining[pumpIdx]);
+        if (used <= 0) {
+            activeInflateBall = null;
+            return;
+        }
+
+        ball.air -= used;
+        pumpFuelRemaining[pumpIdx] -= used;
+        if (pumpFuelRemaining[pumpIdx] < 1e-6) pumpFuelRemaining[pumpIdx] = 0;
+
+        applyBallAirVisual(ball);
+        const airDelta = airBefore - ball.air;
+        if (airDelta >= SHAKE_MIN_AIR_DELTA) {
+            applyInflationShake(ball);
+        }
+        schedulePopIfEmpty(ball);
+    }
+
+    function updatePopEffects() {
+        for (let i = popEffects.length - 1; i >= 0; i--) {
+            const fx = popEffects[i];
+            fx.life -= dt;
+            if (fx.life <= 0) {
+                popEffects.splice(i, 1);
+                continue;
+            }
+            fx.x += fx.vx * dt;
+            fx.y += fx.vy * dt;
+            fx.vy += 420 * dt;
+            fx.vx *= 0.98;
+        }
+    }
+
+    canvas.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+    window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
+    window.addEventListener('mouseup', endDrag);
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+    window.addEventListener('touchmove', (e) => {
+        if (e.touches.length) moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+    window.addEventListener('touchend', endDrag);
+
+    function polygonCentroid(poly) {
+        let cx = 0;
+        let cy = 0;
+        for (let i = 0; i < poly.length; i++) {
+            cx += poly[i].x;
+            cy += poly[i].y;
+        }
+        return { x: cx / poly.length, y: cy / poly.length };
+    }
+
+    function pointInPolygon(px, py, poly) {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const xi = poly[i].x, yi = poly[i].y;
+            const xj = poly[j].x, yj = poly[j].y;
+            const intersects = ((yi > py) !== (yj > py)) &&
+                (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-8) + xi);
+            if (intersects) inside = !inside;
+        }
+        return inside;
+    }
+
+    function closestPointOnSegment(px, py, ax, ay, bx, by) {
+        const abx = bx - ax;
+        const aby = by - ay;
+        const abLenSq = abx * abx + aby * aby;
+        if (abLenSq < 1e-8) return { x: ax, y: ay, t: 0 };
+        let t = ((px - ax) * abx + (py - ay) * aby) / abLenSq;
+        t = Math.max(0, Math.min(1, t));
+        return { x: ax + abx * t, y: ay + aby * t, t };
+    }
+
+    function getOutwardNormal(ax, ay, bx, by, centroid) {
+        const ex = bx - ax;
+        const ey = by - ay;
+        let nx = -ey;
+        let ny = ex;
+        const mx = (ax + bx) * 0.5;
+        const my = (ay + by) * 0.5;
+        const toOutsideX = mx - centroid.x;
+        const toOutsideY = my - centroid.y;
+        if (nx * toOutsideX + ny * toOutsideY < 0) {
+            nx = -nx;
+            ny = -ny;
+        }
+        const len = Math.hypot(nx, ny) || 1;
+        return { x: nx / len, y: ny / len };
+    }
+
+    function projectPointVsPolygon(point, poly, centroid, contactSlop) {
+        let best = null;
+        let bestDistSq = Infinity;
+
+        for (let i = 0; i < poly.length; i++) {
+            const j = (i + 1) % poly.length;
+            const a = poly[i];
+            const b = poly[j];
+            const cp = closestPointOnSegment(point.x, point.y, a.x, a.y, b.x, b.y);
+            const dx = point.x - cp.x;
+            const dy = point.y - cp.y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                best = { i, j, cp };
+            }
+        }
+
+        if (!best) return;
+
+        const a = poly[best.i];
+        const b = poly[best.j];
+        const normal = getOutwardNormal(a.x, a.y, b.x, b.y, centroid);
+        const signedDist = (point.x - best.cp.x) * normal.x + (point.y - best.cp.y) * normal.y;
+        const needInsideTest = bestDistSq < contactSlop * contactSlop * 16;
+        const inside = needInsideTest && pointInPolygon(point.x, point.y, poly);
+        const penetration = inside ? (contactSlop - signedDist) : Math.max(0, contactSlop - signedDist);
+        if (penetration <= 0) return;
+
+        const wp = point.invMass;
+        const wa = a.invMass;
+        const wb = b.invMass;
+        const t = best.cp.t;
+        const wA = wa * (1 - t);
+        const wB = wb * t;
+        const wSum = wp + wA + wB;
+        if (wSum < 1e-8) return;
+
+        const corrX = normal.x * penetration;
+        const corrY = normal.y * penetration;
+
+        point.x += corrX * (wp / wSum);
+        point.y += corrY * (wp / wSum);
+        a.x -= corrX * (wA / wSum);
+        a.y -= corrY * (wA / wSum);
+        b.x -= corrX * (wB / wSum);
+        b.y -= corrY * (wB / wSum);
+    }
+
+    function solvePair(polyA, polyB, pairSeed, cAx, cAy, cBx, cBy) {
+        const contactSlop = 2.0;
+        const cA = { x: cAx, y: cAy };
+        const cB = { x: cBx, y: cBy };
+        const offsetA = (collisionPhase + pairSeed) % polyA.length;
+        const offsetB = (collisionPhase + pairSeed * 3) % polyB.length;
+        const flip = (collisionOrderFlip ^ (pairSeed & 1)) !== 0;
+
+        if (!flip) {
+            for (let i = 0; i < polyA.length; i++) {
+                const idx = (offsetA + i) % polyA.length;
+                projectPointVsPolygon(polyA[idx], polyB, cB, contactSlop);
+            }
+            for (let i = 0; i < polyB.length; i++) {
+                const idx = (offsetB + i) % polyB.length;
+                projectPointVsPolygon(polyB[idx], polyA, cA, contactSlop);
+            }
+        } else {
+            for (let i = 0; i < polyB.length; i++) {
+                const idx = (offsetB + i) % polyB.length;
+                projectPointVsPolygon(polyB[idx], polyA, cA, contactSlop);
+            }
+            for (let i = 0; i < polyA.length; i++) {
+                const idx = (offsetA + i) % polyA.length;
+                projectPointVsPolygon(polyA[idx], polyB, cB, contactSlop);
+            }
+        }
+    }
+
+    function solveBallCollisions() {
+        if (balls.length < 2) return;
+
+        const reachPad = 28;
+        for (let a = 0; a < balls.length; a++) {
+            const ba = balls[a];
+            for (let b = a + 1; b < balls.length; b++) {
+                const bb = balls[b];
+                const dx = ba.cx - bb.cx;
+                const dy = ba.cy - bb.cy;
+                const reach = ba.radius + bb.radius + reachPad;
+                if (dx * dx + dy * dy > reach * reach) continue;
+                solvePair(
+                    ba.particles, bb.particles, a + b,
+                    ba.cx, ba.cy, bb.cx, bb.cy
+                );
+            }
+        }
+        collisionOrderFlip = !collisionOrderFlip;
+        collisionPhase++;
+    }
+
+    function updatePhysics() {
+        const subdt = dt / numSubsteps;
+        const padding = 5;
+        const floorY = floorLimitY();
+
+        for (let step = 0; step < numSubsteps; step++) {
+            for (const p of particles) {
+                if (p === dragNode) continue;
+                p.vy += gravity.y * subdt;
+                p.vx += gravity.x * subdt;
+                p.px = p.x;
+                p.py = p.y;
+                p.x += p.vx * subdt;
+                p.y += p.vy * subdt;
+            }
+
+            if (dragNode) {
+                dragNode.x = mouse.x;
+                dragNode.y = mouse.y;
+                dragNode.px = mouse.x;
+                dragNode.py = mouse.y;
+            }
+
+            refreshBallCentroids();
+
+            for (let iter = 0; iter < pbdIterations; iter++) {
+                solveBallConstraints();
+
+                for (const p of particles) {
+                    if (p.y > floorY) p.y = floorY;
+                    if (p.x > width - padding) p.x = width - padding;
+                    if (p.x < padding) p.x = padding;
+                }
+            }
+
+            solveBallCollisions();
+
+            for (const p of particles) {
+                if (p.y > floorY) p.y = floorY;
+                if (p.x > width - padding) p.x = width - padding;
+                if (p.x < padding) p.x = padding;
+            }
+
+            for (const p of particles) {
+                if (p === dragNode) {
+                    p.vx = 0;
+                    p.vy = 0;
+                    continue;
+                }
+
+                p.vx = (p.x - p.px) / subdt;
+                p.vy = (p.y - p.py) / subdt;
+
+                if (p.y >= floorY - 0.01 && p.vy > 0) {
+                    p.vy = -p.vy * 0.1;
+                    p.vx *= 0.8;
+                }
+                if (p.x <= 5.01 || p.x >= width - 5.01) {
+                    p.vx = -p.vx * 0.1;
+                    p.vy *= 0.8;
+                }
+
+                p.vx *= 0.999;
+                p.vy *= 0.999;
+            }
+
+            if (step === numSubsteps - 1) {
+                const driftBlend = 0.02;
+                const driftSpeedThreshold = 40;
+                const driftMeanVxThreshold = 8;
+                for (let b = 0; b < balls.length; b++) {
+                    const pts = balls[b].particles;
+                    let hasDragNode = false;
+                    for (let i = 0; i < pts.length; i++) {
+                        if (pts[i] === dragNode) {
+                            hasDragNode = true;
+                            break;
+                        }
+                    }
+                    if (hasDragNode) continue;
+
+                    let sumVx = 0;
+                    let sumVy = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        sumVx += pts[i].vx;
+                        sumVy += pts[i].vy;
+                    }
+                    const meanVx = sumVx / pts.length;
+                    const meanVy = sumVy / pts.length;
+                    const meanSpeed = Math.hypot(meanVx, meanVy);
+
+                    if (meanSpeed > driftSpeedThreshold || Math.abs(meanVx) > driftMeanVxThreshold) continue;
+
+                    for (let i = 0; i < pts.length; i++) {
+                        pts[i].vx -= meanVx * driftBlend;
+                    }
+                }
+            }
+        }
+        refreshBallCentroids();
+    }
+
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = width;
+    bgCanvas.height = height;
+    const bgCtx = bgCanvas.getContext('2d');
+    (function paintStaticBackground() {
+        const g = bgCtx.createLinearGradient(0, 0, 0, height);
+        g.addColorStop(0, '#2a1f4e');
+        g.addColorStop(0.45, '#1a1a2e');
+        g.addColorStop(1, '#12121f');
+        bgCtx.fillStyle = g;
+        bgCtx.fillRect(0, 0, width, height);
+        bgCtx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        for (let i = 0; i < 24; i++) {
+            const sx = (i * 97) % width;
+            const sy = (i * 131) % height;
+            bgCtx.beginPath();
+            bgCtx.arc(sx, sy, 1.2, 0, Math.PI * 2);
+            bgCtx.fill();
+        }
+    })();
+
+    function drawBackground() {
+        ctx.drawImage(bgCanvas, 0, 0);
+    }
+
+    function draw() {
+        drawBackground();
+
+        for (const ball of balls) {
+            const pts = ball.particles;
+            if (!pts.length) continue;
+
+            const cx = ball.cx;
+            const cy = ball.cy;
+
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.closePath();
+
+            const grad = ctx.createRadialGradient(
+                cx - ball.radius * 0.3, cy - ball.radius * 0.3, ball.radius * 0.1,
+                cx, cy, ball.radius * 1.1
+            );
+            grad.addColorStop(0, ball.colorLight);
+            grad.addColorStop(1, ball.colorBase);
+
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            const stress = ball.inflate;
+            ctx.lineWidth = 2.5 + stress * 2.5;
+            const strokeAlpha = 0.35 + stress * 0.45;
+            if (stress > 0.55) {
+                ctx.strokeStyle = `rgba(255, ${Math.floor(180 - stress * 120)}, ${Math.floor(200 - stress * 160)}, ${strokeAlpha})`;
+            } else {
+                ctx.strokeStyle = `rgba(255, 255, 255, ${strokeAlpha})`;
+            }
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+            ctx.beginPath();
+            ctx.ellipse(
+                cx - ball.radius * 0.4, cy - ball.radius * 0.4,
+                ball.radius * 0.22, ball.radius * 0.13, -Math.PI / 4, 0, Math.PI * 2
+            );
+            ctx.fill();
+
+            const airLabel = ball.air > 0 ? String(Math.ceil(ball.air)) : '0';
+            const fontSize = Math.max(15, Math.min(34, ball.radius * 0.52));
+            ctx.font = `bold ${fontSize}px "ZCOOL KuaiLe", system-ui, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.lineWidth = Math.max(2, fontSize * 0.14);
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.42)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+            ctx.strokeText(airLabel, cx, cy);
+            ctx.fillText(airLabel, cx, cy);
+        }
+
+        for (const fx of popEffects) {
+            const alpha = Math.max(0, fx.life / fx.maxLife);
+            const r = parseInt(fx.color.slice(1, 3), 16);
+            const g = parseInt(fx.color.slice(3, 5), 16);
+            const b = parseInt(fx.color.slice(5, 7), 16);
+            ctx.beginPath();
+            ctx.arc(fx.x, fx.y, fx.size * alpha, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+            ctx.fill();
+        }
+
+        if (activeInflateBall && balls.includes(activeInflateBall)) {
+            const pts = activeInflateBall.particles;
+            const c = polygonCentroid(pts);
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, activeInflateBall.radius * 1.08, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.25 + activeInflateBall.inflate * 0.5})`;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 6]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        if (dragNode) {
+            ctx.beginPath();
+            ctx.moveTo(dragNode.x, dragNode.y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(mouse.x, mouse.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fill();
+        }
+
+        drawPumpDock();
+    }
+
+    layoutPumpHitRects();
+
+    function loop() {
+        simTime += dt;
+        updateInflation();
+        updatePhysics();
+        updateImminentPops();
+        processChainPops();
+        updatePopEffects();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+</script>
+</body>
+</html>
