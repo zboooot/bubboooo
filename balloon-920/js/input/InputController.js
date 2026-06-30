@@ -1,6 +1,7 @@
 import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
 import { isRainbowBall } from '../items/rainbowBalloon.js';
+import { FIELD_ITEM_HINT_TEXT } from '../ui/FieldItemHintController.js';
 
 /** InputController */
 export class InputController {
@@ -72,18 +73,11 @@ export class InputController {
             const hitBall = game.pickBalloonAt(game.mouse.x, game.mouse.y);
             if (hitBall) {
                 if (isRainbowBall(hitBall)) {
-                    game.sfx.playDenied();
+                    game.showFieldItemHint?.(FIELD_ITEM_HINT_TEXT.rainbow);
                     return;
                 }
                 if (isClownBall(hitBall)) {
-                    let minDist = 42;
-                    for (const p of hitBall.particles) {
-                        const dist = Math.hypot(p.x - game.mouse.x, p.y - game.mouse.y);
-                        if (dist < minDist) {
-                            minDist = dist;
-                            game.pendingDragParticle = p;
-                        }
-                    }
+                    game.showFieldItemHint?.(FIELD_ITEM_HINT_TEXT.clown);
                     return;
                 }
                 const idx = game.selectPumpForBall(hitBall);
@@ -96,6 +90,11 @@ export class InputController {
                 return;
             }
             game.activeInflateBall = null;
+
+            if (game.pickTetrisWallAt?.(game.mouse.x, game.mouse.y)) {
+                game.showFieldItemHint?.(FIELD_ITEM_HINT_TEXT.wall);
+                return;
+            }
 
             let minDist = 42;
             for (const p of game.particles) {

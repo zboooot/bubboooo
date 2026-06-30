@@ -10,6 +10,7 @@ import { Renderer } from './render/Renderer.js';
 import { InputController } from './input/InputController.js';
 import { ProgressStore } from './ui/ProgressStore.js';
 import { PauseController } from './ui/PauseController.js';
+import { FieldItemHintController } from './ui/FieldItemHintController.js';
 import { ItemService } from './items/ItemService.js';
 import { ClownPopCinematicService } from './items/ClownPopCinematicService.js';
 import { TetrisWallService } from './items/TetrisWallService.js';
@@ -101,6 +102,7 @@ export class BalloonGameApp {
         this.ninjaDarts = this.items.ninjaDarts;
         this.clownCinematicService = new ClownPopCinematicService(this);
         this.tetrisWallService = new TetrisWallService(this);
+        this.fieldItemHints = new FieldItemHintController(this);
 
         this._wireSubsystemMethods();
 
@@ -131,6 +133,7 @@ export class BalloonGameApp {
             this.items,
             this.clownCinematicService,
             this.tetrisWallService,
+            this.fieldItemHints,
         ];
         for (const svc of services) {
             const proto = Object.getPrototypeOf(svc);
@@ -218,6 +221,7 @@ export class BalloonGameApp {
             this.updateClownBurstSpawn();
             this.updateBalloonSpawnGrows();
             this.updateItems(Config.dt);
+            this.updateFieldItemHint(Config.dt);
 
             const anchorHold = this.itemRevealAnchorHold;
             const clownFrozen =

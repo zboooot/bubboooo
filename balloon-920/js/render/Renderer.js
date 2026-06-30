@@ -530,6 +530,7 @@ export class Renderer {
                 game.drawPumpDock();
             }
             game.drawItemReveal(ctx);
+            game.drawFieldItemHint(ctx);
             game.drawSettlementOverlay();
             game.drawCelebrateEffects();
             game.drawClownPopCinematic();

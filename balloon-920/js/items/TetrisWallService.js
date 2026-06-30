@@ -21,6 +21,24 @@ export class TetrisWallService {
         this.game.tetrisWalls = [];
     }
 
+    pickTetrisWallAt(x, y) {
+        const game = this.game;
+        if (!game.tetrisWalls?.length) return false;
+        for (let w = 0; w < game.tetrisWalls.length; w++) {
+            for (const cell of game.tetrisWalls[w].cells) {
+                if (
+                    x >= cell.x &&
+                    x <= cell.x + cell.w &&
+                    y >= cell.y &&
+                    y <= cell.y + cell.h
+                ) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     spawnTetrisWallsForLevel(level) {
         const game = this.game;
         game.clearTetrisWalls();

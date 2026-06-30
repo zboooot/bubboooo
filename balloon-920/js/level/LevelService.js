@@ -424,6 +424,7 @@ export class LevelService {
             game.pendingClownItemReveals = [];
             game.pendingClownBurstSnapshots = [];
             game.pendingClownActivations = [];
+            game.clearFieldItemHint?.();
     }
 
     estimateMeanBalloonRadius() {
