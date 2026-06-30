@@ -37,6 +37,8 @@ export const ItemPhase = {
  * @property {ItemSource} defaultSource
  * @property {string} [icon] 渲染用标识
  * @property {boolean} [instantOnDrop] 掉落即生效，无需拾取
+ * @property {'explosion'|null} [presentation] 爆炸类揭晓流程
+ * @property {string} [accentColor] 揭晓背光色
  * @property {(game: object, item: import('./Item.js').Item, ctx: object) => void} [onCollect]
  */
 
@@ -48,6 +50,8 @@ export const ITEM_REGISTRY = {
         defaultSource: ItemSource.DROP,
         icon: 'shuriken',
         instantOnDrop: true,
+        presentation: 'explosion',
+        accentColor: '#38bdf8',
     },
 };
 

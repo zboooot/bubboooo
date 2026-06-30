@@ -13,7 +13,8 @@ export class NinjaDart {
      */
     constructor({ y, speed } = {}) {
         this.uid = _nextDartUid++;
-        this.y = y ?? NinjaDart.randomFlightY();
+        if (y == null) throw new Error('NinjaDart requires a validated flight Y');
+        this.y = y;
         this.x = Config.width + Config.NINJA_DART_OFFSCREEN;
         this.prevX = this.x;
         this.speed = speed ?? Config.NINJA_DART_SPEED;
@@ -25,10 +26,84 @@ export class NinjaDart {
         this.hitBalls = new Set();
     }
 
-    static randomFlightY() {
-        const minY = Config.BALLOON_FIELD_PAD_TOP + 48;
-        const maxY = Config.GROUND_Y - 72;
-        return minY + Math.random() * Math.max(40, maxY - minY);
+    /**
+     * 在气球群「顶部～中间」高度带内随机选路，并保证能击中至少一个气球。
+     * @param {object} game
+     * @param {object} [opts]
+     * @param {object} [opts.excludeBall] 即将被移除的气球，不参与选路
+     * @returns {number|null}
+     */
+    static pickFlightY(game, opts = {}) {
+        const exclude = opts.excludeBall ?? null;
+        const balls = game.balls.filter((b) => b !== exclude && b.air > 0);
+        if (!balls.length) return null;
+
+        for (const ball of balls) game.syncBallBounds(ball);
+
+        const band = NinjaDart._upperFlightBand(balls);
+        const candidates = [];
+
+        for (let i = 0; i < 14; i++) {
+            const y = band.top + Math.random() * (band.mid - band.top);
+            const hitCount = NinjaDart._countHitsAtY(y, balls, game);
+            if (hitCount > 0) candidates.push({ y, hitCount });
+        }
+
+        for (const ball of balls) {
+            if (ball.cy < band.top || ball.cy > band.mid) continue;
+            const hitCount = NinjaDart._countHitsAtY(ball.cy, balls, game);
+            if (hitCount > 0) candidates.push({ y: ball.cy, hitCount });
+        }
+
+        if (!candidates.length) {
+            const fallbackY = NinjaDart._fallbackUpperY(balls, band, game);
+            return fallbackY;
+        }
+
+        let best = 0;
+        for (const c of candidates) best = Math.max(best, c.hitCount);
+        const tier = candidates.filter((c) => c.hitCount === best);
+        return tier[Math.floor(Math.random() * tier.length)].y;
+    }
+
+    /** 气球群垂直范围的上半区：顶缘 ~ 中线 */
+    static _upperFlightBand(balls) {
+        let clusterTop = Infinity;
+        let clusterBottom = -Infinity;
+        for (const ball of balls) {
+            clusterTop = Math.min(clusterTop, ball.cy - ball.boundsRadius);
+            clusterBottom = Math.max(clusterBottom, ball.cy + ball.boundsRadius);
+        }
+        const clusterMid = (clusterTop + clusterBottom) * 0.5;
+        const span = clusterBottom - clusterTop;
+        const minSpan = Config.NINJA_DART_HIT_RADIUS * 2;
+        if (clusterMid - clusterTop < minSpan) {
+            return { top: clusterTop, mid: clusterTop + span * 0.38 };
+        }
+        return { top: clusterTop, mid: clusterMid };
+    }
+
+    static _fallbackUpperY(balls, band, game) {
+        let topBall = balls[0];
+        for (const ball of balls) {
+            if (ball.cy < topBall.cy) topBall = ball;
+        }
+        const y = Math.max(band.top, Math.min(band.mid, topBall.cy));
+        return NinjaDart._countHitsAtY(y, balls, game) > 0 ? y : null;
+    }
+
+    static _countHitsAtY(y, balls, game) {
+        let count = 0;
+        for (const ball of balls) {
+            if (NinjaDart._lineHitsBallAtY(y, ball, game)) count++;
+        }
+        return count;
+    }
+
+    static _lineHitsBallAtY(y, ball, game) {
+        game.syncBallBounds(ball);
+        const reachY = ball.boundsRadius + Config.NINJA_DART_HIT_RADIUS;
+        return Math.abs(y - ball.cy) <= reachY;
     }
 
     /**

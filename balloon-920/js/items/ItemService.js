@@ -1,6 +1,7 @@
-import { ItemPhase } from './itemTypes.js';
+import { ItemPhase, getItemDef } from './itemTypes.js';
 import { ItemDropTable } from './ItemDropTable.js';
 import { ItemSpawnPlanner } from './ItemSpawnPlanner.js';
+import { ItemRevealPresentation } from './ItemRevealPresentation.js';
 import { NinjaDart } from './NinjaDart.js';
 
 /**
@@ -15,11 +16,19 @@ export class ItemService {
         this.itemPickups = [];
         /** @type {NinjaDart[]} 活跃忍者飞镖 */
         this.ninjaDarts = [];
+        /** @type {ItemRevealPresentation|null} */
+        this.itemReveal = null;
+    }
+
+    get isRevealActive() {
+        return this.itemReveal != null;
     }
 
     clearLevelItems() {
         this.itemPickups.length = 0;
         this.ninjaDarts.length = 0;
+        this.itemReveal = null;
+        this.game.itemRevealActive = false;
     }
 
     onBalloonSpawn(ball, spawnIndex, level) {
@@ -44,7 +53,7 @@ export class ItemService {
             levelIndex: this.game.levelIndex,
         });
         for (const itemId of drops) {
-            this._activateDrop(itemId, cx, cy);
+            this._activateDrop(itemId, ball);
         }
     }
 
@@ -62,24 +71,66 @@ export class ItemService {
         ball.embeddedItem = null;
     }
 
-    _activateDrop(itemId, cx, cy) {
-        void cx;
-        void cy;
+    _activateDrop(itemId, poppedBall) {
+        const def = getItemDef(itemId);
+        const pendingOpts = { excludeBall: poppedBall };
+
+        if (def?.presentation === 'explosion') {
+            this._startItemReveal(itemId, poppedBall.cx, poppedBall.cy, pendingOpts);
+            return;
+        }
+
+        this._executeItemEffect(itemId, pendingOpts);
+    }
+
+    _startItemReveal(itemId, anchorX, anchorY, pendingOpts) {
+        if (this.itemReveal || this.ninjaDarts.length > 0) return;
+
+        this.game.popEffects.length = 0;
+        this.itemReveal = new ItemRevealPresentation({
+            itemId,
+            anchorX,
+            anchorY,
+            pendingOpts,
+        });
+        this.game.itemRevealActive = true;
+    }
+
+    _executeItemEffect(itemId, opts = {}) {
         if (itemId === 'ninja_dart') {
-            this.spawnNinjaDart();
+            this.spawnNinjaDart(opts);
         }
     }
 
     spawnNinjaDart(opts = {}) {
         if (this.ninjaDarts.length > 0) return null;
-        const dart = new NinjaDart(opts);
+
+        const y = NinjaDart.pickFlightY(this.game, opts);
+        if (y == null) return null;
+
+        const dart = new NinjaDart({ y, speed: opts.speed });
         this.ninjaDarts.push(dart);
         return dart;
     }
 
     updateItems(dt) {
+        this._updateItemReveal(dt);
+        if (this.isRevealActive) return;
+
         this._updateNinjaDarts(dt);
         this._updateLoosePickups(dt);
+    }
+
+    _updateItemReveal(dt) {
+        if (!this.itemReveal) return;
+
+        const status = this.itemReveal.update(dt);
+        if (status !== 'complete') return;
+
+        const { itemId, pendingOpts } = this.itemReveal;
+        this.itemReveal = null;
+        this.game.itemRevealActive = false;
+        this._executeItemEffect(itemId, pendingOpts);
     }
 
     _updateNinjaDarts(dt) {
@@ -110,5 +161,10 @@ export class ItemService {
         for (const dart of this.ninjaDarts) {
             dart.draw(ctx);
         }
+    }
+
+    drawItemReveal(ctx) {
+        if (!this.itemReveal) return;
+        this.itemReveal.draw(ctx, this.game);
     }
 }

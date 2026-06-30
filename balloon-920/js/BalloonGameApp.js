@@ -69,6 +69,8 @@ export class BalloonGameApp {
         this.itemPickups = [];
         /** @type {import('./items/NinjaDart.js').NinjaDart[]} */
         this.ninjaDarts = [];
+        /** 爆炸类道具揭晓中，暂停操作与物理 */
+        this.itemRevealActive = false;
 
         // --- 子系统实例 ---
         this.sfxEngine = createSfxSystem(() => this.simTime);
@@ -197,23 +199,29 @@ export class BalloonGameApp {
     loop() {
         if (this.appScreen === 'game') {
             this.simTime += Config.dt;
-            this.updateInflation();
-            const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
-                ? this.activeInflateBall.inflate
-                : 0;
-            this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
-            this.updateBallLabelAnims();
-            this.updateComboHud();
-            this.updatePhysics();
-            this.updateImminentPops();
-            this.processChainPops();
-            this.checkLevelLose();
-            this.updateLoseCountdown();
-            this.updateWinRevealCountdown();
-            this.updateLevelTransition();
-            this.updatePopEffects();
-            this.updateCelebrateEffects();
             this.updateItems(Config.dt);
+
+            if (!this.itemRevealActive) {
+                this.updateInflation();
+                const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
+                    ? this.activeInflateBall.inflate
+                    : 0;
+                this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
+                this.updateBallLabelAnims();
+                this.updateComboHud();
+                this.updatePhysics();
+                this.updateImminentPops();
+                this.processChainPops();
+                this.checkLevelLose();
+                this.updateLoseCountdown();
+                this.updateWinRevealCountdown();
+                this.updateLevelTransition();
+            }
+
+            if (!this.itemRevealActive) {
+                this.updatePopEffects();
+            }
+            this.updateCelebrateEffects();
         }
         this.draw();
         requestAnimationFrame(() => this.loop());

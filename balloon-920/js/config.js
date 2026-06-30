@@ -64,3 +64,8 @@ export const NINJA_DART_OFFSCREEN = 40;
 export const NINJA_DART_VISUAL_SIZE = 14;
 export const NINJA_DART_SPIN_SPEED = 18;
 export const NINJA_DART_DEFAULT_DROP_CHANCE = 0.18;
+
+/** 爆炸类道具揭晓：暗屏展示 → 淡出 → 效果发动 */
+export const ITEM_REVEAL_HOLD_SEC = 1.5;
+export const ITEM_REVEAL_FADE_SEC = 0.45;
+export const ITEM_REVEAL_MOVE_SEC = 0.55;
