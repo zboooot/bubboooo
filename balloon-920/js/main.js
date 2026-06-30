@@ -9,6 +9,9 @@ function resolveLaunchOptions() {
     if (test === 'ninja_dart' || test === 'ninja') {
         return { testLevelId: 'ninja_dart' };
     }
+    if (test === 'bomb') {
+        return { testLevelId: 'bomb' };
+    }
     const level = params.get('level');
     if (level == null) return {};
     const idx = Number.parseInt(level, 10);

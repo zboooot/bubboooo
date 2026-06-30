@@ -21,14 +21,23 @@ export class ItemDropTable {
     rollOnPop(ball, ctx) {
         void ball;
 
-        if (ctx.fromDart || ctx.fromChain || !ctx.dartEligible) return [];
+        if (ctx.fromDart || ctx.fromBomb || ctx.fromChain) return [];
 
         const level = this.game.currentLevelSpec;
         const drops = [];
 
-        const ninjaChance = this._resolveNinjaDartChance(level);
-        if (ninjaChance > 0 && Math.random() < ninjaChance) {
-            drops.push('ninja_dart');
+        if (ctx.dartEligible) {
+            const ninjaChance = this._resolveNinjaDartChance(level);
+            if (ninjaChance > 0 && Math.random() < ninjaChance) {
+                drops.push('ninja_dart');
+            }
+        }
+
+        if (ctx.bombEligible) {
+            const bombChance = this._resolveBombChance(level);
+            if (bombChance > 0 && Math.random() < bombChance) {
+                drops.push('bomb');
+            }
         }
 
         return drops.filter((id) => getItemDef(id));
@@ -44,5 +53,17 @@ export class ItemDropTable {
         if (level?.forceNinjaDartOnPop) return 1;
 
         return Config.NINJA_DART_DEFAULT_DROP_CHANCE;
+    }
+
+    _resolveBombChance(level) {
+        const cfg = level?.dropConfig?.bomb;
+        if (cfg != null) {
+            if (typeof cfg === 'number') return cfg;
+            if (typeof cfg.chance === 'number') return cfg.chance;
+        }
+
+        if (level?.forceBombOnPop) return 1;
+
+        return 0;
     }
 }

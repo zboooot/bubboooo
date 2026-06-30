@@ -236,6 +236,7 @@ export class GameFlowService {
     settlementHintForLevel(levelIdx, isWin) {
         const game = this.game;
             if (!isWin) return '';
+            if (game.testLevelId === 'bomb') return '撑爆气球会触发炸弹范围爆破';
             if (game.testLevelId) return '撑爆气球会触发飞镖横穿屏幕';
             if (levelIdx === 0) return '注意底下的气体消耗';
             if (levelIdx === 1) return '大的泡泡更容易撑爆';

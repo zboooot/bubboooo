@@ -26,9 +26,26 @@ export const NINJA_DART_TEST_LEVEL = {
     },
 };
 
+/** 独立测试关，仅通过 ?test=bomb 进入，不计入主线进度 */
+export const BOMB_TEST_LEVEL = {
+    id: 'test-bomb',
+    title: '炸弹试炼',
+    testLevel: true,
+    balloonCountFactor: 0.78,
+    layoutRadiusScale: 0.92,
+    scatter: 0.04,
+    activeTeams: [0, 1, 2],
+    pump: [120, 120, 120],
+    forceBombOnPop: true,
+    dropConfig: {
+        bomb: { chance: 1, radius: 80 },
+    },
+};
+
 /** @type {Record<string, object>} */
 export const TEST_LEVELS = {
     ninja_dart: NINJA_DART_TEST_LEVEL,
+    bomb: BOMB_TEST_LEVEL,
 };
 
 /** 新手基础关（固定，不 procedurally 生成） */

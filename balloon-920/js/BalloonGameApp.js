@@ -71,6 +71,8 @@ export class BalloonGameApp {
         this.itemPickups = [];
         /** @type {import('./items/NinjaDart.js').NinjaDart[]} */
         this.ninjaDarts = [];
+        /** @type {import('./items/Bomb.js').Bomb[]} */
+        this.bombs = [];
         /** 爆炸类道具暗屏揭晓中（连锁/物理仍运行） */
         this.itemRevealActive = false;
         /** 爆破点停留中：冻结连锁、物理与操作 */
@@ -97,6 +99,7 @@ export class BalloonGameApp {
         this.items = new ItemService(this);
         this.itemPickups = this.items.itemPickups;
         this.ninjaDarts = this.items.ninjaDarts;
+        this.bombs = this.items.bombs;
         this.clownCinematicService = new ClownPopCinematicService(this);
         this.tetrisWallService = new TetrisWallService(this);
 
