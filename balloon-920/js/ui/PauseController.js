@@ -38,11 +38,25 @@ export class PauseController {
         game.sfx.autoplayBgm();
     }
 
-    restartFromPause() {
+    /** 独立测试关入口，不读写主线存档 */
+    bootstrapTestLevel(testLevelId) {
         const game = this.game;
-        game.clearProgress();
+        game.testLevelId = testLevelId;
         game.hidePauseScreen();
         game.sfx.resume();
+        game.loadTestLevel(testLevelId);
+        game.sfx.autoplayBgm();
+    }
+
+    restartFromPause() {
+        const game = this.game;
+        game.hidePauseScreen();
+        game.sfx.resume();
+        if (game.testLevelId) {
+            game.loadTestLevel(game.testLevelId);
+            return;
+        }
+        game.clearProgress();
         game.loadLevelImmediate(0);
         game.saveProgress();
         game.sfx.autoplayBgm();

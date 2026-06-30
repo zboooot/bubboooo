@@ -301,7 +301,7 @@ export class BalloonService {
             }
     }
 
-    popBalloon(ball, fromChain = false) {
+    popBalloon(ball, fromChain = false, extraCtx = {}) {
         const game = this.game;
             if (!game.balls.includes(ball)) return;
 
@@ -322,6 +322,7 @@ export class BalloonService {
             game.onBalloonPop(ball, {
                 fromChain,
                 comboCount: game.chainComboCount,
+                ...extraCtx,
             });
             const idx = game.balls.indexOf(ball);
             if (idx >= 0) game.destroyBall(idx);

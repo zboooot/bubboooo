@@ -246,8 +246,9 @@ export class Renderer {
                 const gap = 14;
                 const totalBtnW = btnW * 2 + gap;
                 const bx0 = (Config.width - totalBtnW) * 0.5;
-                const nextLabel = '下一关';
-                game.settlementButtons.restart = drawBtn(bx0, btnW, '重新开始', false);
+                const nextLabel = game.testLevelId ? '再试一次' : '下一关';
+                const restartLabel = game.testLevelId ? '重开本关' : '重新开始';
+                game.settlementButtons.restart = drawBtn(bx0, btnW, restartLabel, false);
                 game.settlementButtons.next = drawBtn(bx0 + btnW + gap, btnW, nextLabel, true);
             } else {
                 const btnW = 168;

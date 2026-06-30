@@ -1,5 +1,5 @@
 import * as Config from '../config.js';
-import { TEAM_PALETTE, TUTORIAL_LEVEL_COUNT, TUTORIAL_LEVELS } from './levelData.js';
+import { TEAM_PALETTE, TUTORIAL_LEVEL_COUNT, TUTORIAL_LEVELS, TEST_LEVELS } from './levelData.js';
 import { clamp, makeSeededRng } from '../utils/math.js';
 
 /** LevelService */
@@ -85,6 +85,44 @@ export class LevelService {
     getLevelSpec(levelIndex) {
         if (this.isTutorialLevel(levelIndex)) return TUTORIAL_LEVELS[levelIndex];
         return this.generateProceduralLevel(levelIndex);
+    }
+
+    getTestLevelSpec(testId) {
+        return TEST_LEVELS[testId] ?? null;
+    }
+
+    isTestSession() {
+        return !!this.game.testLevelId;
+    }
+
+    loadTestLevel(testId = this.game.testLevelId) {
+        const game = this.game;
+        const level = this.getTestLevelSpec(testId);
+        if (!level) return;
+
+        game.testLevelId = testId;
+        game.currentLevelSpec = level;
+        game.levelSpawnRng = makeSeededRng(919919);
+        game.clearWorld();
+        game.gameOutcome = 'playing';
+        game.levelTransitionCountdown = null;
+        game.transitionFade = 0;
+        game.levelTransitionDidLoad = false;
+        game.loseCountdown = null;
+        game.winRevealCountdown = null;
+        game.settlementButtons = { next: null, restart: null };
+        game.selectedPumpIndex = 0;
+        game.activeTeams = level.activeTeams.slice();
+        game.layoutPumpHitRects();
+
+        const layout = game.computeBalloonFillLayout(
+            level.balloonCountFactor,
+            level.layoutRadiusScale ?? 1
+        );
+        game.pumpFuelRemaining = level.pump.slice();
+        game.spawnBalloonsWithLayout(layout, level);
+        game.resetOutcomeSound();
+        game.updateLevelHud();
     }
 
     pickSpawnTeamFromWeights(level, rng) {
@@ -221,6 +259,10 @@ export class LevelService {
 
     loadLevelImmediate(idx, duringTransition = false) {
         const game = this.game;
+            if (game.testLevelId) {
+                game.loadTestLevel(game.testLevelId);
+                return;
+            }
             game.levelIndex = Math.max(0, idx);
             const level = game.getLevelSpec(game.levelIndex);
             game.currentLevelSpec = level;
@@ -259,6 +301,10 @@ export class LevelService {
 
     scheduleLoadLevel(idx) {
         const game = this.game;
+            if (game.testLevelId) {
+                game.loadTestLevel(game.testLevelId);
+                return;
+            }
             game.pendingLoadLevelIndex = Math.max(0, idx);
             game.levelTransitionCountdown = Config.TRANSITION_GAP_SEC;
             game.transitionFade = 0;
@@ -315,6 +361,10 @@ export class LevelService {
 
     advanceAfterWin() {
         const game = this.game;
+            if (game.testLevelId) {
+                game.loadTestLevel(game.testLevelId);
+                return;
+            }
             game.scheduleLoadLevel(game.levelIndex + 1);
     }
 

@@ -214,12 +214,19 @@ export class GameFlowService {
     updateLevelHud() {
         const game = this.game;
             if (!game.dom.levelHudEl) return;
-            game.dom.levelHudEl.textContent = `第 ${game.levelIndex + 1} 关`;
+            const level = game.currentLevelSpec || game.getLevelSpec(game.levelIndex);
+            if (game.testLevelId || level?.testLevel) {
+                game.dom.levelHudEl.textContent = `${level?.title ?? '测试关'} [测试]`;
+                return;
+            }
+            const title = level?.title ? ` · ${level.title}` : '';
+            game.dom.levelHudEl.textContent = `第 ${game.levelIndex + 1} 关${title}`;
     }
 
     settlementHintForLevel(levelIdx, isWin) {
         const game = this.game;
-            if (!isWin || levelIdx > 2) return '';
+            if (!isWin) return '';
+            if (game.testLevelId) return '撑爆气球会触发飞镖横穿屏幕';
             if (levelIdx === 0) return '注意底下的气体消耗';
             if (levelIdx === 1) return '大的泡泡更容易撑爆';
             if (levelIdx === 2) return '先撑爆哪个颜色的泡泡很重要';
