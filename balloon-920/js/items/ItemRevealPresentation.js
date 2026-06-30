@@ -1,5 +1,6 @@
 import * as Config from '../config.js';
 import { getItemDef } from './itemTypes.js';
+import { drawBombIcon } from './BombIcon.js';
 
 /**
  * 爆炸类道具揭晓：爆破点停留 → 暗屏 + 飞镖移至中央 → 淡出 → 触发效果
@@ -106,6 +107,10 @@ export class ItemRevealPresentation {
         );
     }
 
+    get iconRotates() {
+        return this.def?.icon !== 'bomb';
+    }
+
     /**
      * @param {CanvasRenderingContext2D} ctx
      * @param {object} game
@@ -155,9 +160,9 @@ export class ItemRevealPresentation {
 
         ctx.save();
         ctx.translate(this.iconX, this.iconY);
-        ctx.rotate(this.spin);
+        if (this.iconRotates) ctx.rotate(this.spin);
         ctx.scale(this.iconScale, this.iconScale);
-        ItemRevealPresentation._drawShurikenIcon(ctx, 28, accent, alpha);
+        ItemRevealPresentation._drawItemIcon(ctx, this.def?.icon, 28, accent, alpha);
         ctx.restore();
 
         if (centerGlow > 0.2) {
@@ -214,10 +219,18 @@ export class ItemRevealPresentation {
         ctx.fill();
 
         ctx.translate(this.anchorX, this.anchorY);
-        ctx.rotate(this.spin);
+        if (this.iconRotates) ctx.rotate(this.spin);
         ctx.scale(this.iconScale, this.iconScale);
-        ItemRevealPresentation._drawShurikenIcon(ctx, 34, accent, 1);
+        ItemRevealPresentation._drawItemIcon(ctx, this.def?.icon, 34, accent, 1);
         ctx.restore();
+    }
+
+    static _drawItemIcon(ctx, icon, size, accent, alpha) {
+        if (icon === 'bomb') {
+            ItemRevealPresentation._drawBombIcon(ctx, size, accent, alpha);
+            return;
+        }
+        ItemRevealPresentation._drawShurikenIcon(ctx, size, accent, alpha);
     }
 
     static _easeOutCubic(t) {
@@ -267,5 +280,9 @@ export class ItemRevealPresentation {
         ctx.beginPath();
         ctx.arc(0, 0, size * 0.14, 0, Math.PI * 2);
         ctx.fill();
+    }
+
+    static _drawBombIcon(ctx, size, accent, alpha) {
+        drawBombIcon(ctx, { size, accent, alpha });
     }
 }

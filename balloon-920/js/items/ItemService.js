@@ -3,6 +3,8 @@ import { ItemDropTable } from './ItemDropTable.js';
 import { ItemSpawnPlanner } from './ItemSpawnPlanner.js';
 import { ItemRevealPresentation } from './ItemRevealPresentation.js';
 import { NinjaDart } from './NinjaDart.js';
+import { Bomb } from './Bomb.js';
+import * as Config from '../config.js';
 
 /**
  * 道具子系统入口
@@ -16,10 +18,14 @@ export class ItemService {
         this.itemPickups = [];
         /** @type {NinjaDart[]} 活跃忍者飞镖 */
         this.ninjaDarts = [];
+        /** @type {Bomb[]} 活跃炸弹 */
+        this.bombs = [];
         /** @type {ItemRevealPresentation|null} */
         this.itemReveal = null;
         /** 本次玩家操作是否已消耗飞镖触发名额（含判定失败） */
         this.dartActionConsumed = false;
+        /** 本次玩家操作是否已消耗炸弹触发名额（含判定失败） */
+        this.bombActionConsumed = false;
     }
 
     get isRevealActive() {
@@ -30,18 +36,21 @@ export class ItemService {
         return this.itemReveal?.phase === 'anchor_hold';
     }
 
-    /** 玩家新一轮打气操作开始，重置飞镖触发名额 */
+    /** 玩家新一轮打气操作开始，重置道具触发名额 */
     beginPlayerDartAction() {
         this.dartActionConsumed = false;
+        this.bombActionConsumed = false;
     }
 
     clearLevelItems() {
         this.itemPickups.length = 0;
         this.ninjaDarts.length = 0;
+        this.bombs.length = 0;
         this.itemReveal = null;
         this.game.itemRevealActive = false;
         this.game.itemRevealAnchorHold = false;
         this.dartActionConsumed = false;
+        this.bombActionConsumed = false;
     }
 
     onBalloonSpawn(ball, spawnIndex, level) {
@@ -64,10 +73,14 @@ export class ItemService {
         const dartEligible = this._canAttemptDartRoll(ctx);
         if (dartEligible) this.dartActionConsumed = true;
 
+        const bombEligible = this._canAttemptBombRoll(ctx);
+        if (bombEligible) this.bombActionConsumed = true;
+
         const drops = this.dropTable.rollOnPop(ball, {
             ...ctx,
             levelIndex: this.game.levelIndex,
             dartEligible,
+            bombEligible,
         });
         for (const itemId of drops) {
             this._activateDrop(itemId, ball);
@@ -75,9 +88,16 @@ export class ItemService {
     }
 
     _canAttemptDartRoll(ctx) {
-        if (ctx.fromDart || ctx.fromChain) return false;
+        if (ctx.fromDart || ctx.fromBomb || ctx.fromChain) return false;
         if (this.dartActionConsumed) return false;
-        if (this.itemReveal || this.ninjaDarts.length > 0) return false;
+        if (this.itemReveal || this.ninjaDarts.length > 0 || this.bombs.length > 0) return false;
+        return true;
+    }
+
+    _canAttemptBombRoll(ctx) {
+        if (ctx.fromBomb || ctx.fromDart || ctx.fromChain) return false;
+        if (this.bombActionConsumed) return false;
+        if (this.itemReveal || this.bombs.length > 0 || this.ninjaDarts.length > 0) return false;
         return true;
     }
 
@@ -108,7 +128,7 @@ export class ItemService {
     }
 
     _startItemReveal(itemId, anchorX, anchorY, pendingOpts) {
-        if (this.itemReveal || this.ninjaDarts.length > 0) return;
+        if (this.itemReveal || this.ninjaDarts.length > 0 || this.bombs.length > 0) return;
 
         this.game.activeInflateBall = null;
         this.game.dragNode = null;
@@ -125,6 +145,10 @@ export class ItemService {
     _executeItemEffect(itemId, opts = {}) {
         if (itemId === 'ninja_dart') {
             this.spawnNinjaDart(opts);
+            return;
+        }
+        if (itemId === 'bomb') {
+            this.spawnBomb(opts);
         }
     }
 
@@ -139,11 +163,38 @@ export class ItemService {
         return dart;
     }
 
+    spawnBomb(opts = {}) {
+        if (this.bombs.length > 0) return null;
+
+        const radius = this._resolveBombRadius(opts);
+        const target = Bomb.pickDropTarget(this.game, { ...opts, radius });
+        if (target == null) return null;
+
+        const bomb = new Bomb({
+            targetX: target.x,
+            targetY: target.y,
+            radius,
+        });
+        this.bombs.push(bomb);
+        return bomb;
+    }
+
+    _resolveBombRadius(opts = {}) {
+        if (typeof opts.radius === 'number') return opts.radius;
+
+        const level = this.game.currentLevelSpec;
+        const cfg = level?.dropConfig?.bomb;
+        if (cfg != null && typeof cfg.radius === 'number') return cfg.radius;
+
+        return Config.BOMB_DEFAULT_EXPLOSION_RADIUS;
+    }
+
     updateItems(dt) {
         this._updateItemReveal(dt);
         if (this.isRevealActive) return;
 
         this._updateNinjaDarts(dt);
+        this._updateBombs(dt);
         this._updateLoosePickups(dt);
     }
 
@@ -177,6 +228,16 @@ export class ItemService {
         }
     }
 
+    _updateBombs(dt) {
+        if (!this.bombs.length) return;
+        const game = this.game;
+        for (let i = this.bombs.length - 1; i >= 0; i--) {
+            const bomb = this.bombs[i];
+            bomb.update(dt, game);
+            if (!bomb.alive) this.bombs.splice(i, 1);
+        }
+    }
+
     _updateLoosePickups(dt) {
         if (!this.itemPickups.length) return;
 
@@ -192,6 +253,9 @@ export class ItemService {
     }
 
     drawItems(ctx) {
+        for (const bomb of this.bombs) {
+            bomb.draw(ctx);
+        }
         for (const dart of this.ninjaDarts) {
             dart.draw(ctx);
         }

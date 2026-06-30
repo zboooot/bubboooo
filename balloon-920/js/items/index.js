@@ -5,3 +5,5 @@ export { ItemSpawnPlanner } from './ItemSpawnPlanner.js';
 export { ItemService } from './ItemService.js';
 export { ItemRevealPresentation } from './ItemRevealPresentation.js';
 export { NinjaDart, NinjaDartPathMode } from './NinjaDart.js';
+export { Bomb } from './Bomb.js';
+export { drawBombIcon } from './BombIcon.js';

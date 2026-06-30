@@ -65,6 +65,15 @@ export const ITEM_REGISTRY = {
         defaultSource: ItemSource.EMBEDDED,
         icon: '▦',
     },
+    bomb: {
+        id: 'bomb',
+        name: '炸弹',
+        defaultSource: ItemSource.DROP,
+        icon: 'bomb',
+        instantOnDrop: true,
+        presentation: 'explosion',
+        accentColor: '#f97316',
+    },
 };
 
 export function getItemDef(itemId) {

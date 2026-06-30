@@ -74,6 +74,19 @@ export const NINJA_DART_LEFT_APEX_X = 26;
 export const NINJA_DART_RIGHT_APEX_X = LOGICAL_WIDTH - 26;
 export const NINJA_DART_DEFAULT_DROP_CHANCE = 0.18;
 
+/** 炸弹：爆破触发，随机落点下落，范围爆破气球 */
+export const BOMB_DEFAULT_EXPLOSION_RADIUS = 80;
+export const BOMB_DROP_DURATION_SEC = 0.8;
+export const BOMB_DROP_GRAVITY = 1100;
+export const BOMB_LAND_HOLD_SEC = 0.5;
+export const BOMB_EXPLODE_HOLD_SEC = 0.4;
+export const BOMB_EXPLODE_RING_MAX_SCALE = 1;
+export const BOMB_VISUAL_SIZE = 18;
+export const BOMB_DEFAULT_DROP_CHANCE = 0.18;
+/** 揭晓暗屏中央，炸弹坠落起点（与 ItemRevealPresentation 一致） */
+export const BOMB_REVEAL_CENTER_X = LOGICAL_WIDTH * 0.5;
+export const BOMB_REVEAL_CENTER_Y = GROUND_Y * 0.44;
+
 /** 爆炸类道具揭晓：爆破点停留 → 暗屏展示 → 淡出 → 效果发动 */
 export const ITEM_REVEAL_ANCHOR_HOLD_SEC = 0.5;
 export const ITEM_REVEAL_HOLD_SEC = 1.5;
