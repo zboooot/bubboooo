@@ -94,7 +94,7 @@ export class Renderer {
                 game.drawBallAirLabel(ball, cx, cy);
             }
 
-            if (!game.itemRevealActive) for (const fx of game.popEffects) {
+            for (const fx of game.popEffects) {
                 const alpha = Math.max(0, fx.life / fx.maxLife);
                 const r = parseInt(fx.color.slice(1, 3), 16);
                 const g = parseInt(fx.color.slice(3, 5), 16);

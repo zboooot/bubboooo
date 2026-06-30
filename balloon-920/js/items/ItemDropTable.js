@@ -21,12 +21,12 @@ export class ItemDropTable {
     rollOnPop(ball, ctx) {
         void ball;
 
-        if (ctx.fromDart) return [];
+        if (ctx.fromDart || ctx.fromChain || !ctx.dartEligible) return [];
 
         const level = this.game.currentLevelSpec;
         const drops = [];
 
-        const ninjaChance = this._resolveNinjaDartChance(level, ctx);
+        const ninjaChance = this._resolveNinjaDartChance(level);
         if (ninjaChance > 0 && Math.random() < ninjaChance) {
             drops.push('ninja_dart');
         }
@@ -34,7 +34,7 @@ export class ItemDropTable {
         return drops.filter((id) => getItemDef(id));
     }
 
-    _resolveNinjaDartChance(level, ctx) {
+    _resolveNinjaDartChance(level) {
         const cfg = level?.dropConfig?.ninja_dart;
         if (cfg != null) {
             if (typeof cfg === 'number') return cfg;
@@ -43,10 +43,6 @@ export class ItemDropTable {
 
         if (level?.forceNinjaDartOnPop) return 1;
 
-        let chance = Config.NINJA_DART_DEFAULT_DROP_CHANCE;
-        if (ctx.fromChain && ctx.comboCount >= 3) {
-            chance = Math.min(0.35, chance + 0.06);
-        }
-        return chance;
+        return Config.NINJA_DART_DEFAULT_DROP_CHANCE;
     }
 }

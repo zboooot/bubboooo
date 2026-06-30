@@ -18,10 +18,21 @@ export class ItemService {
         this.ninjaDarts = [];
         /** @type {ItemRevealPresentation|null} */
         this.itemReveal = null;
+        /** 本次玩家操作是否已消耗飞镖触发名额（含判定失败） */
+        this.dartActionConsumed = false;
     }
 
     get isRevealActive() {
         return this.itemReveal != null;
+    }
+
+    get isAnchorHoldActive() {
+        return this.itemReveal?.phase === 'anchor_hold';
+    }
+
+    /** 玩家新一轮打气操作开始，重置飞镖触发名额 */
+    beginPlayerDartAction() {
+        this.dartActionConsumed = false;
     }
 
     clearLevelItems() {
@@ -29,6 +40,8 @@ export class ItemService {
         this.ninjaDarts.length = 0;
         this.itemReveal = null;
         this.game.itemRevealActive = false;
+        this.game.itemRevealAnchorHold = false;
+        this.dartActionConsumed = false;
     }
 
     onBalloonSpawn(ball, spawnIndex, level) {
@@ -48,13 +61,24 @@ export class ItemService {
 
         this._releaseEmbedded(ball, cx, cy);
 
+        const dartEligible = this._canAttemptDartRoll(ctx);
+        if (dartEligible) this.dartActionConsumed = true;
+
         const drops = this.dropTable.rollOnPop(ball, {
             ...ctx,
             levelIndex: this.game.levelIndex,
+            dartEligible,
         });
         for (const itemId of drops) {
             this._activateDrop(itemId, ball);
         }
+    }
+
+    _canAttemptDartRoll(ctx) {
+        if (ctx.fromDart || ctx.fromChain) return false;
+        if (this.dartActionConsumed) return false;
+        if (this.itemReveal || this.ninjaDarts.length > 0) return false;
+        return true;
     }
 
     _releaseEmbedded(ball, cx, cy) {
@@ -86,14 +110,16 @@ export class ItemService {
     _startItemReveal(itemId, anchorX, anchorY, pendingOpts) {
         if (this.itemReveal || this.ninjaDarts.length > 0) return;
 
-        this.game.popEffects.length = 0;
+        this.game.activeInflateBall = null;
+        this.game.dragNode = null;
         this.itemReveal = new ItemRevealPresentation({
             itemId,
             anchorX,
             anchorY,
             pendingOpts,
         });
-        this.game.itemRevealActive = true;
+        this.game.itemRevealAnchorHold = true;
+        this.game.itemRevealActive = false;
     }
 
     _executeItemEffect(itemId, opts = {}) {
@@ -105,10 +131,10 @@ export class ItemService {
     spawnNinjaDart(opts = {}) {
         if (this.ninjaDarts.length > 0) return null;
 
-        const y = NinjaDart.pickFlightY(this.game, opts);
-        if (y == null) return null;
+        const path = NinjaDart.pickFlightPath(this.game, opts);
+        if (path == null) return null;
 
-        const dart = new NinjaDart({ y, speed: opts.speed });
+        const dart = new NinjaDart({ path });
         this.ninjaDarts.push(dart);
         return dart;
     }
@@ -124,12 +150,20 @@ export class ItemService {
     _updateItemReveal(dt) {
         if (!this.itemReveal) return;
 
+        const wasAnchorHold = this.itemReveal.phase === 'anchor_hold';
         const status = this.itemReveal.update(dt);
+
+        if (wasAnchorHold && this.itemReveal.phase !== 'anchor_hold') {
+            this.game.itemRevealAnchorHold = false;
+            this.game.itemRevealActive = true;
+        }
+
         if (status !== 'complete') return;
 
         const { itemId, pendingOpts } = this.itemReveal;
         this.itemReveal = null;
         this.game.itemRevealActive = false;
+        this.game.itemRevealAnchorHold = false;
         this._executeItemEffect(itemId, pendingOpts);
     }
 

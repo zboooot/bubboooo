@@ -69,8 +69,10 @@ export class BalloonGameApp {
         this.itemPickups = [];
         /** @type {import('./items/NinjaDart.js').NinjaDart[]} */
         this.ninjaDarts = [];
-        /** 爆炸类道具揭晓中，暂停操作与物理 */
+        /** 爆炸类道具暗屏揭晓中（连锁/物理仍运行） */
         this.itemRevealActive = false;
+        /** 爆破点停留中：冻结连锁、物理与操作 */
+        this.itemRevealAnchorHold = false;
 
         // --- 子系统实例 ---
         this.sfxEngine = createSfxSystem(() => this.simTime);
@@ -201,24 +203,26 @@ export class BalloonGameApp {
             this.simTime += Config.dt;
             this.updateItems(Config.dt);
 
-            if (!this.itemRevealActive) {
+            const anchorHold = this.itemRevealAnchorHold;
+
+            if (!this.itemRevealActive && !anchorHold) {
                 this.updateInflation();
                 const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
                     ? this.activeInflateBall.inflate
                     : 0;
                 this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
-                this.updateBallLabelAnims();
-                this.updateComboHud();
-                this.updatePhysics();
-                this.updateImminentPops();
-                this.processChainPops();
-                this.checkLevelLose();
-                this.updateLoseCountdown();
-                this.updateWinRevealCountdown();
                 this.updateLevelTransition();
             }
 
-            if (!this.itemRevealActive) {
+            if (!anchorHold) {
+                // 暗屏揭晓期间仍执行基础爆破规则（同色连锁、坠落、胜负判定）
+                this.updateBallLabelAnims();
+                this.updateComboHud();
+                this.updateImminentPops();
+                this.processChainPops();
+                this.updatePhysics();
+                this.updateLoseCountdown();
+                this.updateWinRevealCountdown();
                 this.updatePopEffects();
             }
             this.updateCelebrateEffects();

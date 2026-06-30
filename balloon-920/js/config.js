@@ -57,15 +57,25 @@ export const TRANSITION_GAP_SEC = 1.5;
 export const TRANSITION_FADE_HALF_SEC = TRANSITION_GAP_SEC * 0.5;
 export const LOSE_DELAY_SEC = TRANSITION_GAP_SEC;
 
-/** 忍者飞镖：爆破触发，横穿屏幕击破路径气球 */
-export const NINJA_DART_SPEED = 520;
-export const NINJA_DART_HIT_RADIUS = 16;
-export const NINJA_DART_OFFSCREEN = 40;
-export const NINJA_DART_VISUAL_SIZE = 14;
-export const NINJA_DART_SPIN_SPEED = 18;
+/** 忍者飞镖：固定 V 形折返，随机左顶点 / 右顶点，严格沿折线飞行 */
+export const NINJA_DART_SPEED = 1080;
+export const NINJA_DART_HIT_RADIUS = 22;
+export const NINJA_DART_OFFSCREEN = 48;
+export const NINJA_DART_VISUAL_SIZE = 48;
+export const NINJA_DART_TRAIL_LEN = 64;
+export const NINJA_DART_SPIN_SPEED = 16;
+/** 固定 V 形锚点（与示意图一致，不做动态偏移） */
+export const NINJA_DART_ENTRY_Y = BALLOON_FIELD_PAD_TOP + 32;
+export const NINJA_DART_APEX_Y = Math.round(GROUND_Y * 0.4);
+export const NINJA_DART_EXIT_Y = GROUND_Y - 88;
+/** 路线 A：右上 → 左顶点 → 右下 */
+export const NINJA_DART_LEFT_APEX_X = 26;
+/** 路线 B：左上 → 右顶点 → 左下 */
+export const NINJA_DART_RIGHT_APEX_X = LOGICAL_WIDTH - 26;
 export const NINJA_DART_DEFAULT_DROP_CHANCE = 0.18;
 
-/** 爆炸类道具揭晓：暗屏展示 → 淡出 → 效果发动 */
+/** 爆炸类道具揭晓：爆破点停留 → 暗屏展示 → 淡出 → 效果发动 */
+export const ITEM_REVEAL_ANCHOR_HOLD_SEC = 0.5;
 export const ITEM_REVEAL_HOLD_SEC = 1.5;
 export const ITEM_REVEAL_FADE_SEC = 0.45;
 export const ITEM_REVEAL_MOVE_SEC = 0.55;

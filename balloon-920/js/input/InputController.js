@@ -31,7 +31,7 @@ export class InputController {
     startDrag(clientX, clientY) {
         const game = this.game;
             if (game.appScreen !== 'game') return;
-            if (game.itemRevealActive) return;
+            if (game.itemRevealActive || game.itemRevealAnchorHold) return;
             game.sfx.resume();
             const pos = game.screenToLogical(clientX, clientY);
             game.mouse.x = pos.x;
@@ -66,6 +66,7 @@ export class InputController {
             if (hitBall) {
                 const idx = game.selectPumpForBall(hitBall);
                 if (idx >= 0 && game.pumpFuelRemaining[idx] > 0) {
+                    game.beginPlayerDartAction();
                     game.activeInflateBall = hitBall;
                 } else {
                     game.sfx.playDenied();
