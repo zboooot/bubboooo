@@ -194,7 +194,7 @@ function spawnOneDuplicateDropFromTop(game, burst) {
     game.createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
     const ball = game.balls[game.balls.length - 1];
     ball.air = air;
-    ball.labelLastCeil = Math.ceil(air);
+    ball.labelLastCeil = game.displayAirForLabel(ball);
     game.applyBallAirVisual(ball);
     game.reshapeBallToCircle(ball, visualR);
     game.localRelaxBall(ball, 6);

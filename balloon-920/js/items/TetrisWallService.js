@@ -33,9 +33,12 @@ export class TetrisWallService {
         const floorY = game.floorLimitY() - 12;
         const playW = Config.width - padX * 2;
 
+        const balloonBand = this._balloonVerticalExtents();
+        const keepOut = this._balloonKeepOutGap();
+
         for (let n = 0; n < count; n++) {
             let placed = false;
-            for (let attempt = 0; attempt < 48 && !placed; attempt++) {
+            for (let attempt = 0; attempt < 64 && !placed; attempt++) {
                 const piece = pickRandomTetromino(rng);
                 const bounds = cellsBounds(piece.cells, TETRIS_CELL_SIZE);
                 if (bounds.width > TETRIS_MAX_WIDTH + 0.5) continue;
@@ -45,7 +48,13 @@ export class TetrisWallService {
                 if (maxX <= padX || maxY <= padTop) continue;
 
                 const originX = padX + rng() * (maxX - padX);
-                const originY = padTop + rng() * (maxY - padTop);
+                const yMin = balloonBand
+                    ? Math.min(maxY, balloonBand.bottom + keepOut)
+                    : padTop;
+                const preferBelow = balloonBand && yMin < maxY && rng() < 0.82;
+                const originY = preferBelow
+                    ? yMin + rng() * (maxY - yMin)
+                    : padTop + rng() * (maxY - padTop);
                 const cells = piece.cells.map(([c, r]) => ({
                     x: originX + c * TETRIS_CELL_SIZE,
                     y: originY + r * TETRIS_CELL_SIZE,
@@ -84,13 +93,41 @@ export class TetrisWallService {
         return false;
     }
 
-    _overlapsBalls(cells) {
+    /** 与气球软体轮廓保持间距，避免墙生成在球体内部 */
+    _balloonKeepOutGap() {
+        return 14;
+    }
+
+    /** @returns {{ top: number, bottom: number } | null} */
+    _balloonVerticalExtents() {
         const game = this.game;
+        if (!game.balls.length) return null;
+        const gap = this._balloonKeepOutGap();
+        let top = Infinity;
+        let bottom = -Infinity;
         for (let i = 0; i < game.balls.length; i++) {
             const ball = game.balls[i];
             game.syncBallBounds(ball);
+            const r = Math.max(ball.boundsRadius, ball.radius) + gap;
+            top = Math.min(top, ball.cy - r);
+            bottom = Math.max(bottom, ball.cy + r);
+        }
+        return { top, bottom };
+    }
+
+    _overlapsBalls(cells) {
+        const game = this.game;
+        const gap = this._balloonKeepOutGap();
+        for (let i = 0; i < game.balls.length; i++) {
+            const ball = game.balls[i];
+            game.syncBallBounds(ball);
+            const pts = ball.particles;
             for (const cell of cells) {
-                if (this._circleRectOverlap(ball.cx, ball.cy, ball.boundsRadius + 6, cell)) return true;
+                for (let p = 0; p < pts.length; p++) {
+                    if (this._circleRectOverlap(pts[p].x, pts[p].y, gap, cell)) return true;
+                }
+                const hullR = Math.max(ball.boundsRadius, ball.radius) + gap;
+                if (this._circleRectOverlap(ball.cx, ball.cy, hullR, cell)) return true;
             }
         }
         return false;

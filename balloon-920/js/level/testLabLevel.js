@@ -22,7 +22,7 @@ export function buildTestLabLevelSpec(params) {
     const activeTeams = [];
     for (let i = 0; i < teamCount; i++) activeTeams.push(i);
     const pump = activeTeams.map(() => 120);
-    return {
+    const spec = {
         id: 0,
         title: '测试关卡',
         testLab: true,
@@ -41,4 +41,11 @@ export function buildTestLabLevelSpec(params) {
         pump,
         embeddedItems: [],
     };
+
+    if (p.itemMode === 'ninja_dart') {
+        spec.forceNinjaDartOnPop = true;
+        spec.dropConfig = { ninja_dart: { chance: 1 } };
+    }
+
+    return spec;
 }

@@ -245,13 +245,13 @@ export class LevelService {
                 game.createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
                 const ball = game.balls[game.balls.length - 1];
                 ball.air = air;
-                ball.labelLastCeil = Math.ceil(air);
                 game.applyBallAirVisual(ball);
                 const visualR = seedRadius * game.currentInflateScale(ball);
                 game.reshapeBallToCircle(ball, visualR);
                 game.localRelaxBall(ball, 10);
                 game.syncBallRestState(ball);
                 game.schedulePopIfEmpty(ball);
+                ball.labelLastCeil = game.displayAirForLabel(ball);
                 game.onBalloonSpawn(ball, i, level);
             }
 
@@ -405,6 +405,10 @@ export class LevelService {
         const level = buildTestLabLevelSpec(params);
         if (level.itemMode !== 'clown' && level.itemMode !== 'both') level.clownCount = 0;
         if (level.itemMode !== 'tetris' && level.itemMode !== 'both') level.tetrisWallCount = 0;
+        if (level.itemMode === 'ninja_dart') {
+            level.clownCount = 0;
+            level.tetrisWallCount = 0;
+        }
         game.levelIndex = 0;
         game.currentLevelSpec = level;
         level.seed = rollEphemeralSeed(0x7e57);
@@ -484,13 +488,13 @@ export class LevelService {
             game.createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
             const ball = game.balls[game.balls.length - 1];
             ball.air = air;
-            ball.labelLastCeil = Math.ceil(air);
             game.applyBallAirVisual(ball);
             const visualR = seedRadius * game.currentInflateScale(ball);
             game.reshapeBallToCircle(ball, visualR);
             game.localRelaxBall(ball, 10);
             game.syncBallRestState(ball);
             game.schedulePopIfEmpty(ball);
+            ball.labelLastCeil = game.displayAirForLabel(ball);
             game.onBalloonSpawn(ball, i, level);
         }
 

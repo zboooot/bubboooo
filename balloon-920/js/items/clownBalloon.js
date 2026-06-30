@@ -18,7 +18,7 @@ export function spawnClownBalloon(game, cx, cy, radius, meta = {}) {
     ball.air = Math.max(40, meta.air ?? 72);
     ball.clownCopyMin = meta.copyMin ?? 5;
     ball.clownCopyMax = meta.copyMax ?? 10;
-    ball.labelLastCeil = Math.ceil(ball.air);
+    ball.labelLastCeil = game.displayAirForLabel(ball);
     game.applyBallAirVisual(ball);
     const visualR = r * game.currentInflateScale(ball);
     game.reshapeBallToCircle(ball, visualR);

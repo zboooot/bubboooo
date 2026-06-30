@@ -123,8 +123,9 @@ export class ItemService {
     }
 
     _executeItemEffect(itemId, opts = {}) {
-        if (itemId === 'ninja_dart') {
-            this.spawnNinjaDart(opts);
+        const def = getItemDef(itemId);
+        if (def?.onCollect) {
+            def.onCollect(this.game, null, opts);
         }
     }
 

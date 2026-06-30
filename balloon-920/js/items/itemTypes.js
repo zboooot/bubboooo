@@ -1,9 +1,10 @@
 /**
  * 道具类型定义与注册表
  *
- * 道具分两类（ItemSource）：
+ * 道具分三类（ItemSource）：
  * - embedded：关卡生成时预设在气泡内，随气泡状态变化（隐藏/显露），爆破时释放
  * - drop：气泡被撑爆时按掉落表概率产出，不占用气泡预设槽位
+ * - field：独立铺在场上，由专用 Service 生成（如俄罗斯方块墙），不进入 ball.embeddedItem
  */
 
 /** @readonly */
@@ -12,6 +13,8 @@ export const ItemSource = {
     EMBEDDED: 'embedded',
     /** 爆破时 roll 产出，进入 itemPickups 列表 */
     DROP: 'drop',
+    /** 场地布置，不嵌在气球内 */
+    FIELD: 'field',
 };
 
 /**
@@ -35,6 +38,7 @@ export const ItemPhase = {
  * @property {string} id
  * @property {string} name
  * @property {ItemSource} defaultSource
+ * @property {boolean} [spawnsInBalloon] 是否允许作为 embedded 挂在气球内（默认 true）
  * @property {string} [icon] 渲染用标识
  * @property {boolean} [instantOnDrop] 掉落即生效，无需拾取
  * @property {'explosion'|null} [presentation] 爆炸类揭晓流程
@@ -52,6 +56,9 @@ export const ITEM_REGISTRY = {
         instantOnDrop: true,
         presentation: 'explosion',
         accentColor: '#38bdf8',
+        onCollect(game, _item, ctx) {
+            game.spawnNinjaDart(ctx ?? {});
+        },
     },
     clown_balloon: {
         id: 'clown_balloon',
@@ -62,11 +69,21 @@ export const ITEM_REGISTRY = {
     tetris_wall: {
         id: 'tetris_wall',
         name: '俄罗斯方块墙',
-        defaultSource: ItemSource.EMBEDDED,
+        defaultSource: ItemSource.FIELD,
+        spawnsInBalloon: false,
         icon: '▦',
     },
 };
 
 export function getItemDef(itemId) {
     return ITEM_REGISTRY[itemId] ?? null;
+}
+
+/** @param {string} itemId */
+export function canEmbedItemInBalloon(itemId) {
+    const def = getItemDef(itemId);
+    if (!def) return false;
+    if (def.spawnsInBalloon === false) return false;
+    if (def.defaultSource === ItemSource.FIELD) return false;
+    return def.defaultSource === ItemSource.EMBEDDED;
 }

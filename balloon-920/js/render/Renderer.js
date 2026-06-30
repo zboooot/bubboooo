@@ -165,9 +165,13 @@ export class Renderer {
         const game = this.game;
             const ctx = game.dom.ctx;
             game.ensureBallLabelState(ball);
-            const airLabel = ball.air > 0 ? String(Math.ceil(ball.air)) : '0';
+            const displayAir = game.displayAirForLabel(ball);
+            const airLabel = String(displayAir);
+            const redBlend = game.displayAirLabelRedBlend(ball);
+            const atBurst = ball.imminentPopDelay != null;
             let fontSize = Math.max(15, Math.min(34, ball.radius * 0.52));
-            const scale = ball.labelScale * (1 + ball.labelPulse * 0.12);
+            const burstPulse = atBurst ? 1 + 0.14 * Math.sin(game.simTime * 38) : 1;
+            const scale = ball.labelScale * (1 + ball.labelPulse * 0.12) * burstPulse;
             fontSize *= scale;
             fontSize = Math.min(fontSize, ball.radius * 0.8);
 
@@ -189,10 +193,69 @@ export class Renderer {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.lineWidth = Math.max(2, fontSize * 0.14);
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.42)';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+            const fillR = 255;
+            const fillG = Math.round(255 * (1 - redBlend) + 48 * redBlend);
+            const fillB = Math.round(255 * (1 - redBlend) + 52 * redBlend);
+            const strokeA = 0.35 + redBlend * 0.35;
+            ctx.strokeStyle = `rgba(${Math.round(40 + 120 * redBlend)}, 0, 0, ${strokeA})`;
+            ctx.fillStyle = `rgba(${fillR}, ${fillG}, ${fillB}, ${atBurst ? 1 : 0.96})`;
+            if (redBlend > 0.02) {
+                ctx.shadowColor = `rgba(255, 60, 40, ${0.25 + redBlend * 0.55})`;
+                ctx.shadowBlur = 4 + redBlend * 14;
+            }
             ctx.strokeText(airLabel, cx, labelY);
             ctx.fillText(airLabel, cx, labelY);
+            ctx.shadowBlur = 0;
+    }
+
+    drawImminentPopBallFx(ball, cx, cy) {
+        if (ball.imminentPopDelay == null) return;
+        const game = this.game;
+        const ctx = game.dom.ctx;
+        const total = Config.FULL_POP_DELAY;
+        const progress = 1 - Math.max(0, ball.imminentPopDelay) / total;
+        const baseR = ball.radius;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        const glowR = baseR * (1.05 + progress * 0.75);
+        const glow = ctx.createRadialGradient(cx, cy, baseR * 0.15, cx, cy, glowR);
+        glow.addColorStop(0, `rgba(255, 255, 255, ${0.22 + progress * 0.28})`);
+        glow.addColorStop(0.35, `rgba(255, 255, 255, ${0.1 + progress * 0.14})`);
+        glow.addColorStop(0.7, `rgba(255, 255, 255, ${0.04 + progress * 0.05})`);
+        glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+        ctx.fill();
+
+        const waveCount = 3;
+        const maxSpread = 2.65;
+        for (let i = 0; i < waveCount; i++) {
+            const lag = i * 0.18;
+            const t = Math.min(1, Math.max(0, progress * 1.15 - lag));
+            if (t <= 0.02) continue;
+            const ease = 1 - Math.pow(1 - t, 2.4);
+            const radius = baseR * (1.02 + ease * maxSpread);
+            const fade = Math.pow(1 - t, 1.85);
+            const alpha = fade * (0.38 - i * 0.08);
+            const width = (2.8 - ease * 1.6) * (1 - i * 0.15);
+
+            ctx.lineWidth = Math.max(0.8, width);
+            ctx.strokeStyle = `rgba(255, 252, 245, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.lineWidth = Math.max(0.5, width * 0.55);
+            ctx.strokeStyle = `rgba(255, 140, 90, ${alpha * 0.45})`;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius + 1.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
     }
 
     drawBackground() {
@@ -215,7 +278,6 @@ export class Renderer {
         const game = this.game;
             const ctx = game.dom.ctx;
             game.drawBackground();
-            game.drawTetrisWalls(ctx);
 
             for (const ball of game.balls) {
                 const pts = ball.particles;
@@ -247,11 +309,14 @@ export class Renderer {
                         ball.radius * 0.22, ball.radius * 0.13, -Math.PI / 4, 0, Math.PI * 2
                     );
                     ctx.fill();
+                    game.drawImminentPopBallFx(ball, cx, cy);
                     game.drawBallAirLabel(ball, cx, cy);
                 } else {
                     game.drawClownFace(ball, cx, cy);
                 }
             }
+
+            game.drawTetrisWalls(ctx);
 
             for (const fx of game.popEffects) {
                 const alpha = Math.max(0, fx.life / fx.maxLife);

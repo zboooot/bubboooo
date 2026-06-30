@@ -1,4 +1,4 @@
-import { ItemPhase, ItemSource } from './itemTypes.js';
+import { ItemPhase, ItemSource, canEmbedItemInBalloon } from './itemTypes.js';
 import { Item } from './Item.js';
 
 /**
@@ -34,6 +34,7 @@ export class ItemSpawnPlanner {
 
         const entry = entries.find((e) => e.spawnIndex === spawnIndex);
         if (!entry?.itemId) return null;
+        if (!canEmbedItemInBalloon(entry.itemId)) return null;
 
         return new Item({
             itemId: entry.itemId,

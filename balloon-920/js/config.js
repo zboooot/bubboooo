@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.10';
+export const APP_VERSION = '1.11';
 export const APP_VERSION_DATE = '2026-06-30';
 
 export const LOGICAL_WIDTH = 360;
@@ -44,7 +44,10 @@ export const PARTICLES_PER_BALLOON = 20;
 export const AIR_CAPACITY = 100;
 export const PUMP_AIR_RATE = 164;
 export const INFLATE_MAX_SCALE = 1.842;
-export const FULL_POP_DELAY = 0.2;
+export const FULL_POP_DELAY = 0.28;
+/** 气球数字从该当前气量起向红色指数过渡（100 = 撑爆） */
+export const AIR_LABEL_RED_START = 90;
+export const AIR_LABEL_RED_EXP = 4.5;
 export const CHAIN_POP_INTERVAL = 0.07;
 export const CHAIN_PARTICLE_TOUCH = 16;
 export const DRAG_MOVE_THRESHOLD = 12;

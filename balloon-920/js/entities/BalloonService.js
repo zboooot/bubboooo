@@ -64,7 +64,7 @@ export class BalloonService {
                 labelLift: 0,
                 labelScale: 1,
                 labelPulse: 0,
-                labelLastCeil: Config.AIR_CAPACITY,
+                labelLastCeil: 0,
                 role: 'normal',
             });
     }
@@ -181,6 +181,32 @@ export class BalloonService {
             }
     }
 
+    /**
+     * 气球标签数字：当前气量 0–100（100 = 即将撑爆）。
+     * 内部 ball.air 仍为「剩余可打气量」，与视觉/打气逻辑一致。
+     * @param {object} ball
+     * @param {number} [remainingAir] 可选，用于打气前后对比动画
+     */
+    displayAirForLabel(ball, remainingAir) {
+        const cap = Config.AIR_CAPACITY;
+        const rem = remainingAir !== undefined ? remainingAir : ball.air;
+        if (rem <= 0 && ball.imminentPopDelay != null) return cap;
+        const filled = cap - Math.max(0, rem);
+        return Math.min(cap, Math.max(0, Math.ceil(filled)));
+    }
+
+    /** @returns {number} 0–1，当前气量 ≥90 时指数趋红 */
+    displayAirLabelRedBlend(ball) {
+        const display = this.displayAirForLabel(ball);
+        const start = Config.AIR_LABEL_RED_START;
+        if (display < start) return 0;
+        const span = Config.AIR_CAPACITY - start;
+        const t = Math.min(1, Math.max(0, (display - start) / span));
+        const k = Config.AIR_LABEL_RED_EXP;
+        if (t <= 0) return 0;
+        return (Math.exp(k * t) - 1) / (Math.exp(k) - 1);
+    }
+
     airToFillRatio(air) {
         const game = this.game;
             const clamped = Math.max(0, Math.min(Config.AIR_CAPACITY, air));
@@ -217,7 +243,71 @@ export class BalloonService {
         const game = this.game;
             if (isClownBall(ball)) return;
             if (ball.air > 0) return;
-            if (ball.imminentPopDelay == null) ball.imminentPopDelay = Config.FULL_POP_DELAY;
+            if (ball.imminentPopDelay == null) {
+                ball.imminentPopDelay = Config.FULL_POP_DELAY;
+                game.primeImminentPopFx(ball);
+            }
+    }
+
+    primeImminentPopFx(ball) {
+        this.game.spawnImminentPopBurst(ball);
+    }
+
+    spawnImminentPopBurst(ball) {
+        const game = this.game;
+        const c = game.polygonCentroid(ball.particles);
+        const sparks = ['#ff3b3b', '#ff6b35', '#ffcc66', '#fff5f5', ball.colorLight];
+        for (let i = 0; i < 32; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 120 + Math.random() * 340;
+            game.popEffects.push({
+                x: c.x + (Math.random() - 0.5) * ball.radius * 0.35,
+                y: c.y + (Math.random() - 0.5) * ball.radius * 0.35,
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp - 40,
+                life: 0.35 + Math.random() * 0.45,
+                maxLife: 0.8,
+                color: sparks[i % sparks.length],
+                size: 2.5 + Math.random() * 5.5,
+            });
+        }
+    }
+
+    spawnImminentPopSparks(ball, count = 2) {
+        const game = this.game;
+        const c = game.polygonCentroid(ball.particles);
+        for (let i = 0; i < count; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 60 + Math.random() * 180;
+            game.popEffects.push({
+                x: c.x,
+                y: c.y,
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp,
+                life: 0.22 + Math.random() * 0.2,
+                maxLife: 0.42,
+                color: Math.random() < 0.55 ? '#ff4444' : '#ffaa44',
+                size: 2 + Math.random() * 3,
+            });
+        }
+    }
+
+    applyImminentPopShake(ball, delayLeft) {
+        const game = this.game;
+        const urgency = 1 - delayLeft / Config.FULL_POP_DELAY;
+        const pts = ball.particles;
+        const c = game.polygonCentroid(pts);
+        const mag = (18 + urgency * 120) * Config.dt;
+        const spin = game.simTime * (28 + urgency * 50);
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            const nx = p.x - c.x;
+            const ny = p.y - c.y;
+            const len = Math.hypot(nx, ny) || 1;
+            const wave = Math.sin(spin + i * 1.1);
+            p.vx += (nx / len) * wave * mag + (Math.random() - 0.5) * mag * 2.2;
+            p.vy += (ny / len) * wave * mag + (Math.random() - 0.5) * mag * 2.2;
+        }
     }
 
     rollBaselineInitialAir(spawnIndex = 0) {
@@ -238,6 +328,8 @@ export class BalloonService {
             for (let i = game.balls.length - 1; i >= 0; i--) {
                 const ball = game.balls[i];
                 if (ball.imminentPopDelay == null) continue;
+                game.applyImminentPopShake(ball, ball.imminentPopDelay);
+                if (Math.random() < 0.72) game.spawnImminentPopSparks(ball, 1 + Math.floor(Math.random() * 2));
                 ball.imminentPopDelay -= Config.dt;
                 if (ball.imminentPopDelay <= 0) {
                     ball.imminentPopDelay = null;
@@ -449,7 +541,7 @@ export class BalloonService {
             if (ball.labelLift == null) ball.labelLift = 0;
             if (ball.labelScale == null) ball.labelScale = 1;
             if (ball.labelPulse == null) ball.labelPulse = 0;
-            if (ball.labelLastCeil == null) ball.labelLastCeil = Math.ceil(ball.air);
+            if (ball.labelLastCeil == null) ball.labelLastCeil = game.displayAirForLabel(ball);
     }
 
     updateBallLabelAnims() {
@@ -466,10 +558,10 @@ export class BalloonService {
     bumpBallLabelOnAirTick(ball, airBefore) {
         const game = this.game;
             game.ensureBallLabelState(ball);
-            const ceilBefore = Math.ceil(airBefore);
-            const ceilAfter = Math.ceil(ball.air);
-            if (ceilAfter < ceilBefore) {
-                const step = ceilBefore - ceilAfter;
+            const ceilBefore = game.displayAirForLabel(ball, airBefore);
+            const ceilAfter = game.displayAirForLabel(ball);
+            if (ceilAfter > ceilBefore) {
+                const step = ceilAfter - ceilBefore;
                 ball.labelLift = Math.min(ball.radius * 0.4, ball.labelLift + 3.2 + step * 1.2);
                 ball.labelPulse = Math.min(1, ball.labelPulse + 0.55 + step * 0.15);
                 ball.labelScale = Math.min(1.34, ball.labelScale + 0.07 + step * 0.03);
