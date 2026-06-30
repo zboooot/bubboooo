@@ -1,5 +1,6 @@
 import * as Config from '../config.js';
 import { TEAM_PALETTE } from '../level/levelData.js';
+import { isClownBall } from '../items/clownBalloon.js';
 
 /** PumpService */
 export class PumpService {
@@ -41,7 +42,9 @@ export class PumpService {
 
     pumpSlotForBall(ball) {
         const game = this.game;
-            const ctx = game.dom.ctx;
+            if (isClownBall(ball)) {
+                return game.pumpSlotForPaletteTeam(game.activeTeams[0] ?? 0);
+            }
             return game.pumpSlotForPaletteTeam(game.paletteIndexForColor(ball.colorBase));
     }
 

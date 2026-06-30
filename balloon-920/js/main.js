@@ -1,6 +1,8 @@
 import { APP_VERSION } from './config.js';
 import { LOGICAL_WIDTH, LOGICAL_HEIGHT } from './config.js';
 import { BalloonGameApp } from './BalloonGameApp.js';
+import { DebugPanelController } from './ui/DebugPanelController.js';
+
 function resolveLaunchOptions() {
     const params = new URLSearchParams(window.location.search);
     const test = params.get('test');
@@ -32,7 +34,10 @@ const dom = {
     btnStartPrimary: document.getElementById('btnStartPrimary'),
     btnStartRestart: document.getElementById('btnStartRestart'),
     stageEl: document.getElementById('stage'),
+    btnOpenTestLab: document.getElementById('btnOpenTestLab'),
+    btnRestartNormalGame: document.getElementById('btnRestartNormalGame'),
 };
 
 const app = new BalloonGameApp(dom, resolveLaunchOptions());
+new DebugPanelController(app);
 app.start();

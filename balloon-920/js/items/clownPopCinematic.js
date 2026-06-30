@@ -1,0 +1,206 @@
+import * as Config from '../config.js';
+import { isClownBall, enqueueClownsNearPop } from './clownShared.js';
+
+export const CLOWN_CINEMATIC_DURATION_SEC = 2;
+/** 爆破特效播完后再进入暗屏闪烁演出 */
+export const CLOWN_CINEMATIC_DELAY_SEC = 0.5;
+const BURST_SPAWN_INTERVAL_SEC = 0.36;
+
+/** 小丑按白色球计入同色连锁（仅颜色键，仍不可打气） */
+export function clownChainColorKey(ball) {
+    if (isClownBall(ball)) return '__clown_white__';
+    return ball.colorBase;
+}
+
+/**
+ * @param {import('../BalloonGameApp.js').BalloonGameApp} game
+ */
+export function isClownCinematicShowing(game) {
+    return game.clownCinematic?.phase === 'play';
+}
+
+export function isGameplayFrozen(game) {
+    return isClownCinematicShowing(game);
+}
+
+/**
+ * @param {import('../BalloonGameApp.js').BalloonGameApp} game
+ */
+export function beginClownPopCinematic(game, ball, fromChain = false) {
+    if (!game.balls.includes(ball) || !isClownBall(ball)) return;
+
+    if (game.clownCinematic) {
+        if (!game.clownCinematic.waitingClowns) game.clownCinematic.waitingClowns = [];
+        game.clownCinematic.waitingClowns.push({ ball, fromChain });
+        return;
+    }
+
+    if (!fromChain) {
+        game.resetChainPopState();
+        game.chainComboCount = 1;
+    } else {
+        game.chainComboCount++;
+    }
+    game.ensureChainVisited();
+    game.chainPopVisited.add(ball);
+
+    game.sfx.playPop(game.chainComboCount);
+    game.bumpComboHud(game.chainComboCount);
+
+    game.spawnPopEffect(ball);
+    game.onBalloonPop(ball, {
+        fromChain,
+        comboCount: game.chainComboCount,
+        isClown: true,
+    });
+
+    enqueueClownsNearPop(game, ball);
+
+    const snapshot = {
+        cx: ball.cx,
+        cy: ball.cy,
+        radius: ball.radius,
+        colorBase: ball.colorBase,
+        colorLight: ball.colorLight,
+        copyMin: ball.clownCopyMin ?? 5,
+        copyMax: ball.clownCopyMax ?? 10,
+    };
+
+    const idx = game.balls.indexOf(ball);
+    if (idx >= 0) game.destroyBall(idx);
+    game.updateBallCount();
+
+    game.activeInflateBall = null;
+    game.dragNode = null;
+    game.pendingDragParticle = null;
+    game.pointerDown = false;
+
+    game.clownCinematic = {
+        phase: 'delay',
+        delayRemaining: CLOWN_CINEMATIC_DELAY_SEC,
+        elapsed: 0,
+        duration: CLOWN_CINEMATIC_DURATION_SEC,
+        snapshot,
+        waitingClowns: [],
+    };
+}
+
+/**
+ * @param {import('../BalloonGameApp.js').BalloonGameApp} game
+ */
+export function updateClownPopCinematic(game, dt) {
+    const cine = game.clownCinematic;
+    if (!cine) return;
+
+    if (cine.phase === 'delay') {
+        cine.delayRemaining -= dt;
+        if (cine.delayRemaining > 0) return;
+        cine.phase = 'play';
+        cine.elapsed = 0;
+        game.activeInflateBall = null;
+        game.dragNode = null;
+        game.pendingDragParticle = null;
+        game.pointerDown = false;
+        return;
+    }
+
+    if (cine.phase !== 'play') return;
+
+    cine.elapsed += dt;
+    if (cine.elapsed < cine.duration) return;
+
+    const waiting = (cine.waitingClowns ?? []).slice();
+    game.clownCinematic = null;
+    try {
+        startClownBurstSpawn(game, cine.snapshot);
+    } catch (err) {
+        console.error('[clown cinematic] spawn failed', err);
+    }
+
+    game.checkLevelWin();
+    game.checkLevelLose();
+
+    for (let i = 0; i < waiting.length; i++) {
+        const item = waiting[i];
+        if (!game.balls.includes(item.ball)) continue;
+        beginClownPopCinematic(game, item.ball, item.fromChain);
+        if (game.clownCinematic) {
+            game.clownCinematic.waitingClowns = waiting.slice(i + 1).filter((w) => game.balls.includes(w.ball));
+        }
+        break;
+    }
+}
+
+function applyBalloonDropFromTopVelocity(ball, rng = Math.random) {
+    const dropVy = 95 + rng() * 75;
+    const driftVx = (rng() - 0.5) * 18;
+    for (const p of ball.particles) {
+        p.vy = dropVy;
+        p.vx = driftVx;
+        p.px = p.x;
+        p.py = p.y;
+    }
+}
+
+/**
+ * @param {import('../BalloonGameApp.js').BalloonGameApp} game
+ */
+export function updateClownBurstSpawn(game, dt) {
+    const burst = game.clownBurstSpawn;
+    if (!burst || burst.remaining <= 0) {
+        game.clownBurstSpawn = null;
+        return;
+    }
+
+    burst.accum += dt;
+    while (burst.remaining > 0 && burst.accum >= burst.interval) {
+        burst.accum -= burst.interval;
+        spawnOneDuplicateDropFromTop(game, burst);
+        burst.remaining--;
+        burst.spawnIndex++;
+        game.updateBallCount();
+    }
+
+    if (burst.remaining <= 0) game.clownBurstSpawn = null;
+}
+
+/** 保留接口，当前复制球不再使用原地挤出生长 */
+export function updateBalloonSpawnGrows(_game, _dt) {}
+
+function startClownBurstSpawn(game, snap) {
+    const minN = snap.copyMin ?? 5;
+    const maxN = snap.copyMax ?? 10;
+    const n = minN + Math.floor(Math.random() * (maxN - minN + 1));
+    game.clownBurstSpawn = {
+        teams: game.activeTeams?.length ? game.activeTeams.slice() : [0],
+        remaining: n,
+        interval: BURST_SPAWN_INTERVAL_SEC,
+        accum: BURST_SPAWN_INTERVAL_SEC * 0.35,
+        spawnIndex: 0,
+    };
+}
+
+function spawnOneDuplicateDropFromTop(game, burst) {
+    const rng = Math.random;
+    const teamId = burst.teams[Math.floor(rng() * burst.teams.length)];
+    const { colorBase, colorLight } = game.pickTeamColor(teamId);
+    const seedRadius = Config.MIN_BALLOON_RADIUS * (0.85 + rng() * 0.35);
+    const air = game.randomInitialAir(Math.floor(rng() * 24));
+    const visualR = seedRadius * game.visualScaleFromAir(air);
+    const playW = Config.width - Config.BALLOON_FIELD_PAD_X * 2;
+    const cx = Config.BALLOON_FIELD_PAD_X + visualR + rng() * Math.max(0, playW - 2 * visualR);
+    const cy = -visualR * (1.15 + rng() * 0.65);
+
+    game.createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
+    const ball = game.balls[game.balls.length - 1];
+    ball.air = air;
+    ball.labelLastCeil = Math.ceil(air);
+    game.applyBallAirVisual(ball);
+    game.reshapeBallToCircle(ball, visualR);
+    game.localRelaxBall(ball, 6);
+    game.syncBallRestState(ball);
+    applyBalloonDropFromTopVelocity(ball, rng);
+    game.schedulePopIfEmpty(ball);
+    game.onBalloonSpawn(ball, burst.spawnIndex, game.currentLevelSpec);
+    game.refreshBallCentroids();
+}

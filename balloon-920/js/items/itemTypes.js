@@ -53,6 +53,18 @@ export const ITEM_REGISTRY = {
         presentation: 'explosion',
         accentColor: '#38bdf8',
     },
+    clown_balloon: {
+        id: 'clown_balloon',
+        name: '小丑气球',
+        defaultSource: ItemSource.EMBEDDED,
+        icon: '🤡',
+    },
+    tetris_wall: {
+        id: 'tetris_wall',
+        name: '俄罗斯方块墙',
+        defaultSource: ItemSource.EMBEDDED,
+        icon: '▦',
+    },
 };
 
 export function getItemDef(itemId) {

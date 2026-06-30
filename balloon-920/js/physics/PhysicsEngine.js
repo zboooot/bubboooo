@@ -181,6 +181,7 @@ export class PhysicsEngine {
                 const ba = game.balls[a];
                 for (let b = a + 1; b < game.balls.length; b++) {
                     const bb = game.balls[b];
+                    if (ba.spawnGrow || bb.spawnGrow) continue;
                     const dx = ba.cx - bb.cx;
                     const dy = ba.cy - bb.cy;
                     const reach = ba.radius + bb.radius + reachPad;
@@ -204,6 +205,7 @@ export class PhysicsEngine {
             for (let step = 0; step < Config.numSubsteps; step++) {
                 for (const p of game.particles) {
                     if (p === game.dragNode) continue;
+                    if (game.particleInSpawnGrowBall?.(p)) continue;
                     p.vy += Config.gravity.y * subdt;
                     p.vx += Config.gravity.x * subdt;
                     p.px = p.x;
@@ -229,9 +231,11 @@ export class PhysicsEngine {
                         if (p.x > Config.width - padding) p.x = Config.width - padding;
                         if (p.x < padding) p.x = padding;
                     }
+                    game.solveTetrisWallCollisions();
                 }
 
                 game.solveBallCollisions();
+                game.solveTetrisWallCollisions();
 
                 for (const p of game.particles) {
                     if (p.y > floorY) p.y = floorY;
@@ -241,6 +245,11 @@ export class PhysicsEngine {
 
                 for (const p of game.particles) {
                     if (p === game.dragNode) {
+                        p.vx = 0;
+                        p.vy = 0;
+                        continue;
+                    }
+                    if (game.particleInSpawnGrowBall?.(p)) {
                         p.vx = 0;
                         p.vy = 0;
                         continue;

@@ -30,8 +30,10 @@
             width: 100%;
             height: 100%;
             display: flex;
+            flex-direction: row;
             align-items: center;
             justify-content: center;
+            gap: 14px;
             padding: 12px;
             background:
                 radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255, 107, 157, 0.12), transparent),
@@ -86,6 +88,11 @@
             letter-spacing: 0.12em;
             margin-bottom: 2px;
             text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+        }
+
+        #levelHud .level-num {
+            font-size: 150%;
+            line-height: 1;
         }
 
         #hudSub {
@@ -245,6 +252,101 @@
             letter-spacing: 0.1em;
             line-height: 1.55;
         }
+
+        #debugPanel {
+            flex: 0 0 auto;
+            width: min(220px, 28vw);
+            max-height: min(100dvh - 24px, 800px);
+            overflow-y: auto;
+            padding: 14px 12px;
+            border-radius: 14px;
+            background: rgba(18, 18, 32, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 12px;
+            letter-spacing: 0.04em;
+        }
+
+        #debugPanel h2 {
+            margin: 0 0 12px;
+            font-size: 15px;
+            color: var(--accent);
+            letter-spacing: 0.12em;
+            font-weight: bold;
+        }
+
+        #debugPanel label {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        #debugPanel label span {
+            display: block;
+            margin-bottom: 4px;
+            opacity: 0.75;
+            font-size: 11px;
+        }
+
+        #debugPanel input,
+        #debugPanel select {
+            width: 100%;
+            padding: 7px 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(0, 0, 0, 0.35);
+            color: #fff;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        #btnOpenTestLab {
+            width: 100%;
+            margin-top: 6px;
+            padding: 11px 10px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 0.1em;
+            color: #fff;
+            background: linear-gradient(180deg, #6b8cff 0%, #3b5bdb 100%);
+            box-shadow: 0 6px 20px rgba(59, 91, 219, 0.35);
+        }
+
+        #btnOpenTestLab:active {
+            transform: scale(0.98);
+        }
+
+        #btnRestartNormalGame {
+            width: 100%;
+            margin-top: 10px;
+            padding: 11px 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 0.1em;
+            color: rgba(255, 255, 255, 0.92);
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        #btnRestartNormalGame:active {
+            transform: scale(0.98);
+        }
+
+        @media (max-width: 520px) {
+            #debugPanel {
+                display: none;
+            }
+            #viewport {
+                gap: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -252,7 +354,7 @@
         <div id="stage">
             <canvas id="physicsCanvas"></canvas>
             <div id="hud">
-                <div id="levelHud">第 1 关</div>
+                <div id="levelHud">第 <span class="level-num">1</span> 关</div>
                 <div id="hudSub">剩余 <span id="ballCount">0</span> 球</div>
             </div>
             <div id="comboHud" data-tier="0" aria-hidden="true">
@@ -268,6 +370,44 @@
             </div>
             <div id="versionTag"></div>
         </div>
+        <aside id="debugPanel" aria-label="测试参数">
+            <h2>测试关卡</h2>
+            <label>
+                <span>普通气球数量</span>
+                <input type="number" id="testBalloonCount" min="0" max="80" value="10">
+            </label>
+            <label>
+                <span>小丑气球数量</span>
+                <input type="number" id="testClownCount" min="0" max="20" value="1">
+            </label>
+            <label>
+                <span>复制数量（最少）</span>
+                <input type="number" id="testCopyMin" min="1" max="30" value="5">
+            </label>
+            <label>
+                <span>复制数量（最多）</span>
+                <input type="number" id="testCopyMax" min="1" max="30" value="10">
+            </label>
+            <label>
+                <span>颜色种类</span>
+                <input type="number" id="testTeamCount" min="2" max="8" value="3">
+            </label>
+            <label>
+                <span>方块墙数量</span>
+                <input type="number" id="testTetrisCount" min="0" max="8" value="1">
+            </label>
+            <label>
+                <span>道具类型</span>
+                <select id="testItemMode">
+                    <option value="clown" selected>小丑气球</option>
+                    <option value="tetris">俄罗斯方块墙</option>
+                    <option value="both">小丑 + 方块墙</option>
+                    <option value="none">无道具</option>
+                </select>
+            </label>
+            <button type="button" id="btnOpenTestLab">打开测试关卡</button>
+            <button type="button" id="btnRestartNormalGame">重新开始游戏</button>
+        </aside>
     </div>
 
 <script type="module" src="js/main.js"></script>
