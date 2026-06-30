@@ -41,12 +41,18 @@ export const ItemPhase = {
 
 /** @type {Record<string, ItemDef>} */
 export const ITEM_REGISTRY = {
-    // TODO: 注册具体道具，示例：
-    // fuel_pack: {
-    //     id: 'fuel_pack',
-    //     name: '气筒补充',
-    //     defaultSource: ItemSource.DROP,
-    // },
+    clown_balloon: {
+        id: 'clown_balloon',
+        name: '小丑气球',
+        defaultSource: ItemSource.EMBEDDED,
+        icon: '🤡',
+    },
+    tetris_wall: {
+        id: 'tetris_wall',
+        name: '俄罗斯方块墙',
+        defaultSource: ItemSource.EMBEDDED,
+        icon: '▦',
+    },
 };
 
 export function getItemDef(itemId) {

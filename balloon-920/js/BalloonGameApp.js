@@ -11,6 +11,8 @@ import { InputController } from './input/InputController.js';
 import { ProgressStore } from './ui/ProgressStore.js';
 import { PauseController } from './ui/PauseController.js';
 import { ItemService } from './items/ItemService.js';
+import { ClownPopCinematicService } from './items/ClownPopCinematicService.js';
+import { TetrisWallService } from './items/TetrisWallService.js';
 
 /**
  * 游戏主应用：持有全局状态，组装各子系统，驱动主循环。
@@ -64,6 +66,11 @@ export class BalloonGameApp {
         this.mouse = { x: 0, y: 0 };
         /** @type {import('./items/Item.js').Item[]} 场上道具（由 ItemService 管理，此处保留快捷引用） */
         this.itemPickups = [];
+        /** @type {import('./level/testLabLevel.js').DEFAULT_TEST_LAB | null} */
+        this.lastTestLabParams = null;
+        this.clownCinematic = null;
+        this.clownBurstSpawn = null;
+        this.tetrisWalls = [];
 
         // --- 子系统实例 ---
         this.sfxEngine = createSfxSystem(() => this.simTime);
@@ -80,6 +87,8 @@ export class BalloonGameApp {
         this.pause = new PauseController(this);
         this.items = new ItemService(this);
         this.itemPickups = this.items.itemPickups;
+        this.clownCinematicService = new ClownPopCinematicService(this);
+        this.tetrisWallService = new TetrisWallService(this);
 
         this._wireSubsystemMethods();
 
@@ -103,6 +112,8 @@ export class BalloonGameApp {
             this.progress,
             this.pause,
             this.items,
+            this.clownCinematicService,
+            this.tetrisWallService,
         ];
         for (const svc of services) {
             const proto = Object.getPrototypeOf(svc);
@@ -186,23 +197,29 @@ export class BalloonGameApp {
     loop() {
         if (this.appScreen === 'game') {
             this.simTime += Config.dt;
-            this.updateInflation();
-            const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
-                ? this.activeInflateBall.inflate
-                : 0;
-            this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
-            this.updateBallLabelAnims();
-            this.updateComboHud();
-            this.updatePhysics();
-            this.updateImminentPops();
-            this.processChainPops();
-            this.checkLevelLose();
-            this.updateLoseCountdown();
-            this.updateWinRevealCountdown();
-            this.updateLevelTransition();
-            this.updatePopEffects();
-            this.updateCelebrateEffects();
-            this.updateItems(Config.dt);
+            this.updateClownPopCinematic();
+            this.updateClownBurstSpawn();
+            this.updateBalloonSpawnGrows();
+            const frozen = typeof this.isGameplayFrozen === 'function' && this.isGameplayFrozen();
+            if (!frozen) {
+                this.updateInflation();
+                const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
+                    ? this.activeInflateBall.inflate
+                    : 0;
+                this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
+                this.updateBallLabelAnims();
+                this.updateComboHud();
+                this.updatePhysics();
+                this.updateImminentPops();
+                this.processChainPops();
+                this.checkLevelLose();
+                this.updateLoseCountdown();
+                this.updateWinRevealCountdown();
+                this.updateLevelTransition();
+                this.updatePopEffects();
+                this.updateCelebrateEffects();
+                this.updateItems(Config.dt);
+            }
         }
         this.draw();
         requestAnimationFrame(() => this.loop());

@@ -1,4 +1,5 @@
 import * as Config from '../config.js';
+import { isClownBall } from '../items/clownBalloon.js';
 
 /** GameFlowService */
 export class GameFlowService {
@@ -10,13 +11,16 @@ export class GameFlowService {
         const game = this.game;
             let n = 0;
             for (let i = 0; i < game.balls.length; i++) {
-                if (game.pumpSlotForBall(game.balls[i]) === slot) n++;
+                const b = game.balls[i];
+                if (isClownBall(b)) continue;
+                if (game.pumpSlotForBall(b) === slot) n++;
             }
             return n;
     }
 
     canFullyPopBallNow(ball) {
         const game = this.game;
+            if (isClownBall(ball)) return false;
             if (ball.air <= 0) return true;
             const slot = game.pumpSlotForBall(ball);
             if (slot < 0) return false;
@@ -214,7 +218,12 @@ export class GameFlowService {
     updateLevelHud() {
         const game = this.game;
             if (!game.dom.levelHudEl) return;
-            game.dom.levelHudEl.textContent = `第 ${game.levelIndex + 1} 关`;
+            const spec = game.currentLevelSpec;
+            if (spec?.testLab) {
+                game.dom.levelHudEl.innerHTML = `<span class="level-num">测试</span> · ${spec.title || '测试关卡'}`;
+                return;
+            }
+            game.dom.levelHudEl.innerHTML = `第 <span class="level-num">${game.levelIndex + 1}</span> 关`;
     }
 
     settlementHintForLevel(levelIdx, isWin) {

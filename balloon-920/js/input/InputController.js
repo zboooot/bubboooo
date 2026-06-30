@@ -1,4 +1,5 @@
 import * as Config from '../config.js';
+import { isClownBall } from '../items/clownBalloon.js';
 
 /** InputController */
 export class InputController {
@@ -31,6 +32,7 @@ export class InputController {
     startDrag(clientX, clientY) {
         const game = this.game;
             if (game.appScreen !== 'game') return;
+            if (game.isGameplayFrozen?.()) return;
             game.sfx.resume();
             const pos = game.screenToLogical(clientX, clientY);
             game.mouse.x = pos.x;
@@ -49,7 +51,11 @@ export class InputController {
                     return;
                 }
                 if (game.hitSettlementButton(game.settlementButtons.restart, game.mouse.x, game.mouse.y)) {
-                    game.scheduleLoadLevel(game.levelIndex);
+                    if (game.currentLevelSpec?.testLab && game.lastTestLabParams) {
+                        game.loadTestLabLevel(game.lastTestLabParams);
+                    } else {
+                        game.scheduleLoadLevel(game.levelIndex);
+                    }
                     return;
                 }
                 return;
@@ -63,6 +69,17 @@ export class InputController {
 
             const hitBall = game.pickBalloonAt(game.mouse.x, game.mouse.y);
             if (hitBall) {
+                if (isClownBall(hitBall)) {
+                    let minDist = 42;
+                    for (const p of hitBall.particles) {
+                        const dist = Math.hypot(p.x - game.mouse.x, p.y - game.mouse.y);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            game.pendingDragParticle = p;
+                        }
+                    }
+                    return;
+                }
                 const idx = game.selectPumpForBall(hitBall);
                 if (idx >= 0 && game.pumpFuelRemaining[idx] > 0) {
                     game.activeInflateBall = hitBall;

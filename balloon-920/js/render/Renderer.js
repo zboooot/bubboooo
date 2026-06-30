@@ -1,9 +1,164 @@
 import * as Config from '../config.js';
+import { isClownBall } from '../items/clownBalloon.js';
+
+const JOKER_ASSETS = ['joker.png', 'joker2.png'];
+/** 低于此 alpha 的像素视为全透明，避免缩放后出现方形描边 */
+const JOKER_ALPHA_CUT = 14;
 
 /** Renderer */
 export class Renderer {
     constructor(game) {
         this.game = game;
+        this.jokerFaceImages = JOKER_ASSETS.map((file) => {
+            const img = new Image();
+            img.decoding = 'async';
+            img.addEventListener('load', () => this._bakeJokerCanvas(img), { once: true });
+            img.src = new URL(`../../assets/${file}`, import.meta.url).href;
+            if (img.complete && img.naturalWidth) this._bakeJokerCanvas(img);
+            return img;
+        });
+    }
+
+    _bakeJokerCanvas(img) {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        if (!w || !h) return;
+        const bake = document.createElement('canvas');
+        bake.width = w;
+        bake.height = h;
+        const bctx = bake.getContext('2d', { willReadFrequently: true });
+        bctx.drawImage(img, 0, 0);
+        const data = bctx.getImageData(0, 0, w, h);
+        const px = data.data;
+        for (let i = 0; i < px.length; i += 4) {
+            if (px[i + 3] <= JOKER_ALPHA_CUT) {
+                px[i] = 0;
+                px[i + 1] = 0;
+                px[i + 2] = 0;
+                px[i + 3] = 0;
+            }
+        }
+        bctx.putImageData(data, 0, 0);
+        img.jokerCanvas = bake;
+    }
+
+    _jokerDrawable(img) {
+        return img?.jokerCanvas || img;
+    }
+
+    _jokerReady(img) {
+        if (!img) return false;
+        if (img.jokerCanvas) return true;
+        return img.complete && img.naturalWidth > 0;
+    }
+
+    /** @returns {HTMLImageElement | null} */
+    pickJokerImage(opts = {}) {
+        const imgs = this.jokerFaceImages.filter((im) => this._jokerReady(im));
+        if (!imgs.length) return null;
+        const flash = opts.flashAlternate === true;
+        if (!flash || imgs.length === 1) return imgs[0];
+        const flashHz = opts.flashHz ?? 2;
+        const frame = Math.floor(this.game.simTime * flashHz) % imgs.length;
+        return imgs[frame];
+    }
+
+    drawJokerIconAt(cx, cy, ballRadius, opts = {}) {
+        const ctx = this.game.dom.ctx;
+        const img = this.pickJokerImage(opts);
+        if (!img) return null;
+
+        const source = this._jokerDrawable(img);
+        const sw = source.width || source.naturalWidth;
+        const sh = source.height || source.naturalHeight;
+        const burn = opts.burn ?? 0;
+        const purpleGlow = opts.purpleGlow ?? 0;
+        const targetH = ballRadius * 1.664;
+        const scale = targetH / sh;
+        const iw = sw * scale;
+        const ih = sh * scale;
+        const x = cx - iw * 0.5;
+        const y = cy - ih * 0.5;
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        const needsFx = purpleGlow > 0 || burn > 0.02;
+        if (!needsFx) {
+            ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
+        } else {
+            const pulse = 0.55 + 0.45 * Math.sin(this.game.simTime * 8);
+            const layer = document.createElement('canvas');
+            layer.width = Math.max(1, Math.ceil(iw));
+            layer.height = Math.max(1, Math.ceil(ih));
+            const lctx = layer.getContext('2d');
+            lctx.drawImage(source, 0, 0, sw, sh, 0, 0, layer.width, layer.height);
+            if (purpleGlow > 0) {
+                lctx.globalCompositeOperation = 'source-atop';
+                lctx.fillStyle = `rgba(168, 85, 247, ${(0.12 + 0.38 * purpleGlow) * pulse})`;
+                lctx.fillRect(0, 0, layer.width, layer.height);
+            }
+            if (burn > 0.02) {
+                lctx.globalCompositeOperation = 'source-atop';
+                const g = lctx.createLinearGradient(0, 0, layer.width, layer.height);
+                g.addColorStop(0, `rgba(255, 160, 60, ${burn * 0.45})`);
+                g.addColorStop(0.45, `rgba(70, 32, 20, ${burn * 0.82})`);
+                g.addColorStop(1, `rgba(8, 6, 6, ${burn * 0.95})`);
+                lctx.fillStyle = g;
+                lctx.fillRect(0, 0, layer.width, layer.height);
+            }
+            ctx.drawImage(layer, x, y);
+        }
+
+        ctx.restore();
+        return { x, y, w: iw, h: ih };
+    }
+
+    drawClownFace(ball, cx, cy) {
+        this.drawJokerIconAt(cx, cy, ball.radius);
+    }
+
+    drawClownPopCinematic() {
+        const game = this.game;
+        const cine = game.clownCinematic;
+        if (!cine || cine.phase !== 'play') return;
+
+        const ctx = game.dom.ctx;
+        const snap = cine.snapshot;
+        const { cx, cy, radius, colorBase, colorLight } = snap;
+        const t = Math.min(1, cine.elapsed / cine.duration);
+        const purple = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(game.simTime * 11));
+
+        ctx.save();
+        const darkA = Math.min(0.88, 0.42 + t * 0.46);
+        ctx.fillStyle = `rgba(5, 4, 12, ${darkA})`;
+        ctx.fillRect(0, 0, Config.width, Config.height);
+
+        const grad = ctx.createRadialGradient(
+            cx - radius * 0.3, cy - radius * 0.3, radius * 0.1,
+            cx, cy, radius * 1.1
+        );
+        grad.addColorStop(0, colorLight);
+        grad.addColorStop(1, colorBase);
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 1.06, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(168, 85, 247, ${0.15 + 0.45 * purple})`;
+        ctx.lineWidth = 3 + 2 * purple;
+        ctx.stroke();
+
+        game.drawJokerIconAt(cx, cy, radius, {
+            burn: t,
+            purpleGlow: purple,
+            flashAlternate: true,
+            flashHz: 2,
+        });
+        ctx.restore();
     }
 
     drawBallAirLabel(ball, cx, cy) {
@@ -60,6 +215,7 @@ export class Renderer {
         const game = this.game;
             const ctx = game.dom.ctx;
             game.drawBackground();
+            game.drawTetrisWalls(ctx);
 
             for (const ball of game.balls) {
                 const pts = ball.particles;
@@ -83,15 +239,18 @@ export class Renderer {
                 ctx.fillStyle = grad;
                 ctx.fill();
 
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
-                ctx.beginPath();
-                ctx.ellipse(
-                    cx - ball.radius * 0.4, cy - ball.radius * 0.4,
-                    ball.radius * 0.22, ball.radius * 0.13, -Math.PI / 4, 0, Math.PI * 2
-                );
-                ctx.fill();
-
-                game.drawBallAirLabel(ball, cx, cy);
+                if (!isClownBall(ball)) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        cx - ball.radius * 0.4, cy - ball.radius * 0.4,
+                        ball.radius * 0.22, ball.radius * 0.13, -Math.PI / 4, 0, Math.PI * 2
+                    );
+                    ctx.fill();
+                    game.drawBallAirLabel(ball, cx, cy);
+                } else {
+                    game.drawClownFace(ball, cx, cy);
+                }
             }
 
             for (const fx of game.popEffects) {
@@ -138,6 +297,7 @@ export class Renderer {
             }
             game.drawSettlementOverlay();
             game.drawCelebrateEffects();
+            game.drawClownPopCinematic();
             game.drawTransitionFade();
     }
 

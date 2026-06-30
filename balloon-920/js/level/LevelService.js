@@ -1,6 +1,8 @@
 import * as Config from '../config.js';
 import { TEAM_PALETTE, TUTORIAL_LEVEL_COUNT, TUTORIAL_LEVELS } from './levelData.js';
-import { clamp, makeSeededRng } from '../utils/math.js';
+import { clamp, makeSeededRng, rollEphemeralSeed } from '../utils/math.js';
+import { buildTestLabLevelSpec } from './testLabLevel.js';
+import { spawnClownBalloon } from '../items/clownBalloon.js';
 
 /** LevelService */
 export class LevelService {
@@ -252,6 +254,7 @@ export class LevelService {
                 game.captureBaselineCounts(layout);
             }
             game.spawnBalloonsWithLayout(layout, level);
+            game.spawnTetrisWallsForLevel(level);
             game.resetOutcomeSound();
             game.updateLevelHud();
             if (!duringTransition && game.appScreen === 'game') game.saveProgress();
@@ -330,6 +333,9 @@ export class LevelService {
             game.dragNode = null;
             game.pendingDragParticle = null;
             game.clearLevelItems();
+            game.clearTetrisWalls();
+            game.clownCinematic = null;
+            game.clownBurstSpawn = null;
     }
 
     estimateMeanBalloonRadius() {
@@ -342,6 +348,104 @@ export class LevelService {
             }
             const meanScale = sumScale / buckets.length;
             return Config.MIN_BALLOON_RADIUS * meanScale;
+    }
+
+    loadTestLabLevel(params) {
+        const game = this.game;
+        const level = buildTestLabLevelSpec(params);
+        if (level.itemMode !== 'clown' && level.itemMode !== 'both') level.clownCount = 0;
+        if (level.itemMode !== 'tetris' && level.itemMode !== 'both') level.tetrisWallCount = 0;
+        game.levelIndex = 0;
+        game.currentLevelSpec = level;
+        level.seed = rollEphemeralSeed(0x7e57);
+        game.levelSpawnRng = makeSeededRng(level.seed);
+        game.clearWorld();
+        game.gameOutcome = 'playing';
+        game.levelTransitionCountdown = null;
+        game.transitionFade = 0;
+        game.loseCountdown = null;
+        game.winRevealCountdown = null;
+        game.settlementButtons = { next: null, restart: null };
+        game.selectedPumpIndex = 0;
+        game.activeTeams = level.activeTeams.slice();
+        game.layoutPumpHitRects();
+        game.pumpFuelRemaining = level.pump.slice();
+        game.spawnTestLabBalloons(level);
+        game.spawnTetrisWallsForLevel(level);
+        game.resetOutcomeSound();
+        game.updateLevelHud();
+    }
+
+    spawnTestLabBalloons(level) {
+        const game = this.game;
+        const rng = game.levelSpawnRng || makeSeededRng(level.seed || 1);
+        const normalCount = Math.max(0, level.balloonCount ?? 0);
+        const clownCount =
+            level.itemMode === 'clown' ? Math.max(0, level.clownCount ?? 0) : 0;
+        const total = Math.max(1, normalCount + clownCount);
+        const layout = game.computeBalloonFillLayout(1, level.layoutRadiusScale ?? 0.95);
+        layout.count = total;
+        const cols = layout.cols;
+        const rows = Math.max(1, Math.ceil(total / cols));
+        layout.rows = rows;
+
+        const scatter = level.scatter ?? 0;
+        const radiusScale = level.layoutRadiusScale ?? 1;
+        const playW = Config.width - Config.BALLOON_FIELD_PAD_X * 2;
+        const playTop = Config.BALLOON_FIELD_PAD_TOP;
+        const playBottom = game.floorLimitY() - layout.r;
+        const copyMeta = {
+            copyMin: level.clownCopyMin,
+            copyMax: level.clownCopyMax,
+        };
+        const clownSlots = new Set();
+        while (clownSlots.size < clownCount && clownSlots.size < total) {
+            clownSlots.add(Math.floor(rng() * total));
+        }
+
+        for (let i = 0; i < total; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const stagger = (row % 2) * (layout.pitchX * 0.5);
+            let cx = layout.originX + col * layout.pitchX + stagger;
+            let cy = layout.originY + row * layout.pitchY;
+            if (scatter > 0.05) {
+                const ampX = layout.pitchX * scatter * 0.55;
+                const ampY = layout.pitchY * scatter * 0.5;
+                cx += (rng() - 0.5) * 2 * ampX;
+                cy += (rng() - 0.5) * 2 * ampY;
+                if (scatter > 0.28 && rng() < scatter * 0.35) {
+                    cx = Config.BALLOON_FIELD_PAD_X + layout.r + rng() * (playW - 2 * layout.r);
+                    cy = playTop + layout.r + rng() * Math.max(layout.r, playBottom - playTop - layout.r);
+                }
+            }
+
+            const seedRadius = Config.MIN_BALLOON_RADIUS * radiusScale;
+            if (clownSlots.has(i)) {
+                spawnClownBalloon(game, cx, cy, seedRadius, copyMeta);
+                const ball = game.balls[game.balls.length - 1];
+                game.onBalloonSpawn(ball, i, level);
+                continue;
+            }
+
+            const teamId = level.activeTeams[i % level.activeTeams.length];
+            const { colorBase, colorLight } = game.pickTeamColor(teamId);
+            const air = game.rollBaselineInitialAir(i);
+            game.createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
+            const ball = game.balls[game.balls.length - 1];
+            ball.air = air;
+            ball.labelLastCeil = Math.ceil(air);
+            game.applyBallAirVisual(ball);
+            const visualR = seedRadius * game.currentInflateScale(ball);
+            game.reshapeBallToCircle(ball, visualR);
+            game.localRelaxBall(ball, 10);
+            game.syncBallRestState(ball);
+            game.schedulePopIfEmpty(ball);
+            game.onBalloonSpawn(ball, i, level);
+        }
+
+        game.refreshBallCentroids();
+        game.updateBallCount();
     }
 
 }

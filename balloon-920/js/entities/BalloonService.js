@@ -2,6 +2,12 @@ import * as Config from '../config.js';
 import { TEAM_PALETTE } from '../level/levelData.js';
 import { Particle, DistanceConstraint, AreaConstraint } from '../physics/pbd.js';
 import { clamp } from '../utils/math.js';
+import {
+    isClownBall,
+    enqueueClownsNearPop,
+    popClownBalloon,
+} from '../items/clownBalloon.js';
+import { clownChainColorKey } from '../items/clownPopCinematic.js';
 
 /** BalloonService */
 export class BalloonService {
@@ -58,7 +64,8 @@ export class BalloonService {
                 labelLift: 0,
                 labelScale: 1,
                 labelPulse: 0,
-                labelLastCeil: Config.AIR_CAPACITY
+                labelLastCeil: Config.AIR_CAPACITY,
+                role: 'normal',
             });
     }
 
@@ -208,6 +215,7 @@ export class BalloonService {
 
     schedulePopIfEmpty(ball) {
         const game = this.game;
+            if (isClownBall(ball)) return;
             if (ball.air > 0) return;
             if (ball.imminentPopDelay == null) ball.imminentPopDelay = Config.FULL_POP_DELAY;
     }
@@ -304,6 +312,10 @@ export class BalloonService {
     popBalloon(ball, fromChain = false) {
         const game = this.game;
             if (!game.balls.includes(ball)) return;
+            if (isClownBall(ball)) {
+                popClownBalloon(game, ball, fromChain);
+                return;
+            }
 
             if (!fromChain) {
                 game.resetChainPopState();
@@ -323,6 +335,7 @@ export class BalloonService {
                 fromChain,
                 comboCount: game.chainComboCount,
             });
+            enqueueClownsNearPop(game, ball);
             const idx = game.balls.indexOf(ball);
             if (idx >= 0) game.destroyBall(idx);
             game.updateBallCount();
@@ -384,7 +397,8 @@ export class BalloonService {
             const neighbors = [];
             for (let i = 0; i < game.balls.length; i++) {
                 const other = game.balls[i];
-                if (other === ball || other.colorBase !== ball.colorBase) continue;
+                if (other === ball) continue;
+                if (clownChainColorKey(other) !== clownChainColorKey(ball)) continue;
                 if (!game.ballsPhysicallyTouch(ball, other)) continue;
                 neighbors.push({ ball: other, gap: game.minParticleGap(ball, other) });
             }
@@ -405,13 +419,16 @@ export class BalloonService {
 
     processChainPops() {
         const game = this.game;
+            if (game.isGameplayFrozen?.()) return;
             if (!game.chainPopQueue.length) return;
             game.chainPopAccum += Config.dt;
             if (game.chainPopAccum < Config.CHAIN_POP_INTERVAL) return;
             game.chainPopAccum -= Config.CHAIN_POP_INTERVAL;
 
             const next = game.chainPopQueue.shift();
-            if (next && game.balls.includes(next)) game.popBalloon(next, true);
+            if (!next || !game.balls.includes(next)) return;
+            if (isClownBall(next)) popClownBalloon(game, next, true);
+            else game.popBalloon(next, true);
     }
 
     resetChainPopState() {
