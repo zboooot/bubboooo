@@ -123,6 +123,7 @@ export class LevelService {
             level.layoutRadiusScale ?? 1
         );
         game.pumpFuelRemaining = level.pump.slice();
+        game.resetPumpFuelLabelAnims();
         game.spawnBalloonsWithLayout(layout, level);
         game.resetOutcomeSound();
         game.updateLevelHud();
@@ -293,6 +294,7 @@ export class LevelService {
             } else {
                 game.pumpFuelRemaining = game.buildProceduralPump(level, layout);
             }
+            game.resetPumpFuelLabelAnims();
             if (game.isTutorialLevel(game.levelIndex)) {
                 game.captureBaselineCounts(layout);
             }
@@ -427,6 +429,7 @@ export class LevelService {
         game.activeTeams = level.activeTeams.slice();
         game.layoutPumpHitRects();
         game.pumpFuelRemaining = level.pump.slice();
+        game.resetPumpFuelLabelAnims();
         game.spawnTestLabBalloons(level);
         game.spawnTetrisWallsForLevel(level);
         game.resetOutcomeSound();

@@ -146,6 +146,46 @@ export class PumpService {
             ctx.closePath();
     }
 
+    ensurePumpFuelLabelState() {
+        const game = this.game;
+        const n = game.pumpFuelRemaining.length;
+        if (game.pumpFuelLabelScale.length === n) return;
+        game.resetPumpFuelLabelAnims();
+    }
+
+    resetPumpFuelLabelAnims() {
+        const game = this.game;
+        const fuels = game.pumpFuelRemaining;
+        game.pumpFuelLabelScale = fuels.map(() => 1);
+    }
+
+    bumpPumpFuelLabelOnFuelUse(pumpIdx, fuelBefore) {
+        const game = this.game;
+        game.ensurePumpFuelLabelState();
+        const after = game.pumpFuelRemaining[pumpIdx] ?? 0;
+        const used = fuelBefore - after;
+        if (used <= 0 || pumpIdx < 0) return;
+
+        let scale = game.pumpFuelLabelScale[pumpIdx] ?? 1;
+        scale = Math.max(0.5, scale - 0.035 - Math.min(used, 4) * 0.022);
+        const ceilBefore = Math.ceil(fuelBefore);
+        const ceilAfter = Math.ceil(after);
+        if (ceilAfter < ceilBefore) {
+            scale = Math.min(scale, 0.62);
+        }
+        game.pumpFuelLabelScale[pumpIdx] = scale;
+    }
+
+    updatePumpFuelLabelAnims() {
+        const game = this.game;
+        const scales = game.pumpFuelLabelScale;
+        if (!scales.length) return;
+        const k = Math.min(1, 11 * Config.dt);
+        for (let i = 0; i < scales.length; i++) {
+            scales[i] += (1 - scales[i]) * k;
+        }
+    }
+
     drawPumpIcon(x, y, w, h, tool, index, selected, fuelRemaining) {
         const game = this.game;
             const ctx = game.dom.ctx;
@@ -236,9 +276,11 @@ export class PumpService {
             ctx.stroke();
 
             ctx.shadowBlur = 0;
+            game.ensurePumpFuelLabelState();
             const num = empty ? '0' : String(Math.max(0, Math.ceil(fuelRemaining)));
             const labelY = barrelTop + barrelH * 0.52;
-            const fontSize = Math.max(14, Math.min(20, barrelW * 0.95));
+            const shrink = game.pumpFuelLabelScale[index] ?? 1;
+            const fontSize = Math.max(14, Math.min(20, barrelW * 0.95)) * shrink;
             ctx.font = `bold ${fontSize}px "ZCOOL KuaiLe", system-ui, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -308,9 +350,11 @@ export class PumpService {
                 return;
             }
 
+            const fuelBeforePump = game.pumpFuelRemaining[pumpIdx];
             ball.air -= used;
             game.pumpFuelRemaining[pumpIdx] -= used;
             if (game.pumpFuelRemaining[pumpIdx] < 1e-6) game.pumpFuelRemaining[pumpIdx] = 0;
+            game.bumpPumpFuelLabelOnFuelUse(pumpIdx, fuelBeforePump);
 
             game.inflatePumpActive = true;
             game.checkLevelLose();

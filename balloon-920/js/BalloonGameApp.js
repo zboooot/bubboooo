@@ -43,6 +43,8 @@ export class BalloonGameApp {
         this.activeTeams = TUTORIAL_LEVELS[0].activeTeams.slice();
         this.selectedPumpIndex = 0;
         this.pumpFuelRemaining = [];
+        /** @type {number[]} 气筒数字缩放（打气减少时收缩再回弹） */
+        this.pumpFuelLabelScale = [];
         this.pumpHitRects = [];
         this.particles = [];
         this.constraints = [];
@@ -232,6 +234,7 @@ export class BalloonGameApp {
 
             if (!anchorHold && !clownFrozen) {
                 this.updateBallLabelAnims();
+                this.updatePumpFuelLabelAnims();
                 this.updateComboHud();
                 this.updateImminentPops();
                 this.processChainPops();

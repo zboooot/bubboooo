@@ -219,19 +219,8 @@ export class GameFlowService {
     updateLevelHud() {
         const game = this.game;
             if (!game.dom.levelHudEl) return;
-            const level = game.currentLevelSpec || game.getLevelSpec(game.levelIndex);
-            if (game.testLevelId || level?.testLevel) {
-                game.dom.levelHudEl.textContent = `${level?.title ?? '测试关'} [测试]`;
-                return;
-            }
-            if (level?.testLab) {
-                game.dom.levelHudEl.innerHTML =
-                    `<span class="level-num">测试</span> · ${level.title || '测试关卡'}`;
-                return;
-            }
-            const title = level?.title ? ` · ${level.title}` : '';
             game.dom.levelHudEl.innerHTML =
-                `第 <span class="level-num">${game.levelIndex + 1}</span> 关${title}`;
+                `第 <span class="level-num">${game.levelIndex + 1}</span> 关`;
     }
 
     settlementHintForLevel(levelIdx, isWin) {
