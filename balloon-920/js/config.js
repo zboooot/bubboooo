@@ -61,7 +61,7 @@ export const LOSE_DELAY_SEC = TRANSITION_GAP_SEC;
 export const NINJA_DART_SPEED = 1080;
 export const NINJA_DART_HIT_RADIUS = 22;
 export const NINJA_DART_OFFSCREEN = 48;
-export const NINJA_DART_VISUAL_SIZE = 48;
+export const NINJA_DART_VISUAL_SIZE = 42;
 export const NINJA_DART_TRAIL_LEN = 64;
 export const NINJA_DART_SPIN_SPEED = 16;
 /** 固定 V 形锚点（与示意图一致，不做动态偏移） */
