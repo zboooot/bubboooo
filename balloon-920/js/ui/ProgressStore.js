@@ -21,6 +21,7 @@ export class ProgressStore {
 
     saveProgress() {
         const game = this.game;
+            if (game.testLevelId) return;
             try {
                 localStorage.setItem(Config.SAVE_KEY, JSON.stringify({
                     levelIndex: game.levelIndex,

@@ -35,18 +35,24 @@ export const ItemPhase = {
  * @property {string} id
  * @property {string} name
  * @property {ItemSource} defaultSource
- * @property {string} [icon] 渲染用标识，TODO: 贴图/字符
- * @property {(game: object, item: import('./Item.js').Item, ctx: object) => void} [onCollect] TODO: 收集生效
+ * @property {string} [icon] 渲染用标识
+ * @property {boolean} [instantOnDrop] 掉落即生效，无需拾取
+ * @property {'explosion'|null} [presentation] 爆炸类揭晓流程
+ * @property {string} [accentColor] 揭晓背光色
+ * @property {(game: object, item: import('./Item.js').Item, ctx: object) => void} [onCollect]
  */
 
 /** @type {Record<string, ItemDef>} */
 export const ITEM_REGISTRY = {
-    // TODO: 注册具体道具，示例：
-    // fuel_pack: {
-    //     id: 'fuel_pack',
-    //     name: '气筒补充',
-    //     defaultSource: ItemSource.DROP,
-    // },
+    ninja_dart: {
+        id: 'ninja_dart',
+        name: '忍者飞镖',
+        defaultSource: ItemSource.DROP,
+        icon: 'shuriken',
+        instantOnDrop: true,
+        presentation: 'explosion',
+        accentColor: '#38bdf8',
+    },
 };
 
 export function getItemDef(itemId) {

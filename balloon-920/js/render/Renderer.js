@@ -94,7 +94,7 @@ export class Renderer {
                 game.drawBallAirLabel(ball, cx, cy);
             }
 
-            for (const fx of game.popEffects) {
+            if (!game.itemRevealActive) for (const fx of game.popEffects) {
                 const alpha = Math.max(0, fx.life / fx.maxLife);
                 const r = parseInt(fx.color.slice(1, 3), 16);
                 const g = parseInt(fx.color.slice(3, 5), 16);
@@ -136,6 +136,7 @@ export class Renderer {
             if (game.gameOutcome !== 'won' && game.gameOutcome !== 'lost') {
                 game.drawPumpDock();
             }
+            game.drawItemReveal(ctx);
             game.drawSettlementOverlay();
             game.drawCelebrateEffects();
             game.drawTransitionFade();
@@ -246,8 +247,9 @@ export class Renderer {
                 const gap = 14;
                 const totalBtnW = btnW * 2 + gap;
                 const bx0 = (Config.width - totalBtnW) * 0.5;
-                const nextLabel = '下一关';
-                game.settlementButtons.restart = drawBtn(bx0, btnW, '重新开始', false);
+                const nextLabel = game.testLevelId ? '再试一次' : '下一关';
+                const restartLabel = game.testLevelId ? '重开本关' : '重新开始';
+                game.settlementButtons.restart = drawBtn(bx0, btnW, restartLabel, false);
                 game.settlementButtons.next = drawBtn(bx0 + btnW + gap, btnW, nextLabel, true);
             } else {
                 const btnW = 168;

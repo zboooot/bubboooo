@@ -1,39 +1,36 @@
+import { ItemPhase, getItemDef } from './itemTypes.js';
 import { ItemDropTable } from './ItemDropTable.js';
 import { ItemSpawnPlanner } from './ItemSpawnPlanner.js';
-import { ItemPhase } from './itemTypes.js';
+import { ItemRevealPresentation } from './ItemRevealPresentation.js';
+import { NinjaDart } from './NinjaDart.js';
 
 /**
  * 道具子系统入口
- *
- * 职责：
- * 1. 关卡加载 → 为气球挂载 embedded 道具
- * 2. 气球爆破 → 释放 embedded + roll drop 道具
- * 3. 帧更新 →  loose 道具物理/寿命
- * 4. 拾取判定 → 触发道具效果（TODO）
- * 5. 渲染 → 由 Renderer 调用 drawItems（TODO）
  */
 export class ItemService {
     constructor(game) {
         this.game = game;
-        this.dropTable = new ItemDropTable();
+        this.dropTable = new ItemDropTable(game);
         this.spawnPlanner = new ItemSpawnPlanner();
         /** @type {import('./Item.js').Item[]} 场上 loose / 待收集 */
         this.itemPickups = [];
+        /** @type {NinjaDart[]} 活跃忍者飞镖 */
+        this.ninjaDarts = [];
+        /** @type {ItemRevealPresentation|null} */
+        this.itemReveal = null;
     }
 
-    // ─── 关卡生命周期 ───────────────────────────────────────────
+    get isRevealActive() {
+        return this.itemReveal != null;
+    }
 
     clearLevelItems() {
         this.itemPickups.length = 0;
-        // TODO: 清理 ball.embeddedItem 引用（destroyBall 时同步）
+        this.ninjaDarts.length = 0;
+        this.itemReveal = null;
+        this.game.itemRevealActive = false;
     }
 
-    /**
-     * 气球生成后挂接预设道具
-     * @param {object} ball
-     * @param {number} spawnIndex
-     * @param {object} level
-     */
     onBalloonSpawn(ball, spawnIndex, level) {
         const rng = this.game.levelSpawnRng ?? (() => Math.random());
         const embedded = this.spawnPlanner.planEmbeddedForBalloon(level, spawnIndex, ball, rng);
@@ -43,35 +40,21 @@ export class ItemService {
         embedded.x = ball.cx;
         embedded.y = ball.cy;
         ball.embeddedItem = embedded;
-
-        // TODO: 可选 — 根据 meta.revealAtAir 在打气时切换 REVEALED 并绘制
     }
 
-    // ─── 爆破链路 ───────────────────────────────────────────────
-
-    /**
-     * 气球被撑爆
-     * @param {object} ball
-     * @param {{ fromChain: boolean, comboCount: number }} ctx
-     */
     onBalloonPop(ball, ctx) {
         const cx = ball.cx;
         const cy = ball.cy;
 
-        // 1) 释放关卡预设道具
         this._releaseEmbedded(ball, cx, cy);
 
-        // 2) 爆破掉落表
         const drops = this.dropTable.rollOnPop(ball, {
             ...ctx,
             levelIndex: this.game.levelIndex,
         });
-        for (const item of drops) {
-            this._spawnLoosePickup(item, cx, cy);
+        for (const itemId of drops) {
+            this._activateDrop(itemId, ball);
         }
-
-        // TODO: 自动拾取 vs 点击拾取策略
-        // TODO: 道具冲突（同帧多掉落）优先级
     }
 
     _releaseEmbedded(ball, cx, cy) {
@@ -88,20 +71,81 @@ export class ItemService {
         ball.embeddedItem = null;
     }
 
-    _spawnLoosePickup(item, cx, cy) {
-        item.releaseFromBall(cx, cy, {
-            vx: (Math.random() - 0.5) * 80,
-            vy: -80 - Math.random() * 60,
-        });
-        this.itemPickups.push(item);
+    _activateDrop(itemId, poppedBall) {
+        const def = getItemDef(itemId);
+        const pendingOpts = { excludeBall: poppedBall };
+
+        if (def?.presentation === 'explosion') {
+            this._startItemReveal(itemId, poppedBall.cx, poppedBall.cy, pendingOpts);
+            return;
+        }
+
+        this._executeItemEffect(itemId, pendingOpts);
     }
 
-    // ─── 帧循环 ─────────────────────────────────────────────────
+    _startItemReveal(itemId, anchorX, anchorY, pendingOpts) {
+        if (this.itemReveal || this.ninjaDarts.length > 0) return;
+
+        this.game.popEffects.length = 0;
+        this.itemReveal = new ItemRevealPresentation({
+            itemId,
+            anchorX,
+            anchorY,
+            pendingOpts,
+        });
+        this.game.itemRevealActive = true;
+    }
+
+    _executeItemEffect(itemId, opts = {}) {
+        if (itemId === 'ninja_dart') {
+            this.spawnNinjaDart(opts);
+        }
+    }
+
+    spawnNinjaDart(opts = {}) {
+        if (this.ninjaDarts.length > 0) return null;
+
+        const y = NinjaDart.pickFlightY(this.game, opts);
+        if (y == null) return null;
+
+        const dart = new NinjaDart({ y, speed: opts.speed });
+        this.ninjaDarts.push(dart);
+        return dart;
+    }
 
     updateItems(dt) {
+        this._updateItemReveal(dt);
+        if (this.isRevealActive) return;
+
+        this._updateNinjaDarts(dt);
+        this._updateLoosePickups(dt);
+    }
+
+    _updateItemReveal(dt) {
+        if (!this.itemReveal) return;
+
+        const status = this.itemReveal.update(dt);
+        if (status !== 'complete') return;
+
+        const { itemId, pendingOpts } = this.itemReveal;
+        this.itemReveal = null;
+        this.game.itemRevealActive = false;
+        this._executeItemEffect(itemId, pendingOpts);
+    }
+
+    _updateNinjaDarts(dt) {
+        if (!this.ninjaDarts.length) return;
+        const game = this.game;
+        for (let i = this.ninjaDarts.length - 1; i >= 0; i--) {
+            const dart = this.ninjaDarts[i];
+            dart.update(dt, game);
+            if (!dart.alive) this.ninjaDarts.splice(i, 1);
+        }
+    }
+
+    _updateLoosePickups(dt) {
         if (!this.itemPickups.length) return;
 
-        // TODO: 重力、边界、与气球碰撞、超时消失
         for (let i = this.itemPickups.length - 1; i >= 0; i--) {
             const item = this.itemPickups[i];
             if (item.phase !== ItemPhase.LOOSE) continue;
@@ -110,42 +154,17 @@ export class ItemService {
             item.y += item.vy * dt;
             item.vy += 420 * dt;
             item.vx *= 0.98;
-
-            // TODO: tryCollect(item)
-            // TODO: if (item.life <= 0) remove
         }
     }
 
-    /**
-     * TODO: 在 Renderer.draw 之后或之前调用
-     * @param {CanvasRenderingContext2D} ctx
-     */
     drawItems(ctx) {
-        void ctx;
-        // TODO: loose 道具 sprite / 图标
-        // TODO: embedded 在球内时的显露绘制（或由 drawBall 钩子处理）
+        for (const dart of this.ninjaDarts) {
+            dart.draw(ctx);
+        }
     }
 
-    // ─── 拾取与效果 ─────────────────────────────────────────────
-
-    /**
-     * TODO: 点击/触碰拾取
-     * @param {number} x
-     * @param {number} y
-     */
-    tryCollectAt(x, y) {
-        void x;
-        void y;
-    }
-
-    /**
-     * TODO: 执行道具效果（改燃料、额外爆破、时间暂停等）
-     * @param {import('./Item.js').Item} item
-     */
-    applyItemEffect(item) {
-        const def = item.def;
-        if (!def?.onCollect) return;
-        // def.onCollect(this.game, item, { ... });
-        void item;
+    drawItemReveal(ctx) {
+        if (!this.itemReveal) return;
+        this.itemReveal.draw(ctx, this.game);
     }
 }

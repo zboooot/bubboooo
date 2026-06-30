@@ -17,8 +17,11 @@ import { ItemService } from './items/ItemService.js';
  * 子系统通过 game 引用访问共享状态；所有子系统方法扁平挂载到 game 以兼容原有函数互调。
  */
 export class BalloonGameApp {
-    constructor(dom) {
+    constructor(dom, opts = {}) {
         this.dom = dom;
+        this._startLevelOverride = opts.startLevel;
+        /** @type {string|null} 独立测试关 id，非空时不写入主线存档 */
+        this.testLevelId = opts.testLevelId ?? null;
 
         // --- 可变游戏状态（与原单文件全局变量一一对应）---
         this.baselineReferenceCount = 0;
@@ -64,6 +67,10 @@ export class BalloonGameApp {
         this.mouse = { x: 0, y: 0 };
         /** @type {import('./items/Item.js').Item[]} 场上道具（由 ItemService 管理，此处保留快捷引用） */
         this.itemPickups = [];
+        /** @type {import('./items/NinjaDart.js').NinjaDart[]} */
+        this.ninjaDarts = [];
+        /** 爆炸类道具揭晓中，暂停操作与物理 */
+        this.itemRevealActive = false;
 
         // --- 子系统实例 ---
         this.sfxEngine = createSfxSystem(() => this.simTime);
@@ -80,13 +87,19 @@ export class BalloonGameApp {
         this.pause = new PauseController(this);
         this.items = new ItemService(this);
         this.itemPickups = this.items.itemPickups;
+        this.ninjaDarts = this.items.ninjaDarts;
 
         this._wireSubsystemMethods();
 
         this._initBackgroundCanvas();
         this._bindEvents();
-        const save = this.loadProgress();
-        this.bootstrapGame(save ? save.levelIndex : 0);
+        if (this.testLevelId) {
+            this.bootstrapTestLevel(this.testLevelId);
+        } else {
+            const save = this.loadProgress();
+            const initialLevel = this._startLevelOverride ?? (save ? save.levelIndex : 0);
+            this.bootstrapGame(initialLevel);
+        }
         this.pumpService.layoutPumpHitRects();
     }
 
@@ -186,23 +199,29 @@ export class BalloonGameApp {
     loop() {
         if (this.appScreen === 'game') {
             this.simTime += Config.dt;
-            this.updateInflation();
-            const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
-                ? this.activeInflateBall.inflate
-                : 0;
-            this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
-            this.updateBallLabelAnims();
-            this.updateComboHud();
-            this.updatePhysics();
-            this.updateImminentPops();
-            this.processChainPops();
-            this.checkLevelLose();
-            this.updateLoseCountdown();
-            this.updateWinRevealCountdown();
-            this.updateLevelTransition();
-            this.updatePopEffects();
-            this.updateCelebrateEffects();
             this.updateItems(Config.dt);
+
+            if (!this.itemRevealActive) {
+                this.updateInflation();
+                const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
+                    ? this.activeInflateBall.inflate
+                    : 0;
+                this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
+                this.updateBallLabelAnims();
+                this.updateComboHud();
+                this.updatePhysics();
+                this.updateImminentPops();
+                this.processChainPops();
+                this.checkLevelLose();
+                this.updateLoseCountdown();
+                this.updateWinRevealCountdown();
+                this.updateLevelTransition();
+            }
+
+            if (!this.itemRevealActive) {
+                this.updatePopEffects();
+            }
+            this.updateCelebrateEffects();
         }
         this.draw();
         requestAnimationFrame(() => this.loop());

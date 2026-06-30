@@ -56,3 +56,16 @@ export const GROUND_Y = LOGICAL_HEIGHT - PUMP_ZONE_HEIGHT;
 export const TRANSITION_GAP_SEC = 1.5;
 export const TRANSITION_FADE_HALF_SEC = TRANSITION_GAP_SEC * 0.5;
 export const LOSE_DELAY_SEC = TRANSITION_GAP_SEC;
+
+/** 忍者飞镖：爆破触发，横穿屏幕击破路径气球 */
+export const NINJA_DART_SPEED = 520;
+export const NINJA_DART_HIT_RADIUS = 16;
+export const NINJA_DART_OFFSCREEN = 40;
+export const NINJA_DART_VISUAL_SIZE = 14;
+export const NINJA_DART_SPIN_SPEED = 18;
+export const NINJA_DART_DEFAULT_DROP_CHANCE = 0.18;
+
+/** 爆炸类道具揭晓：暗屏展示 → 淡出 → 效果发动 */
+export const ITEM_REVEAL_HOLD_SEC = 1.5;
+export const ITEM_REVEAL_FADE_SEC = 0.45;
+export const ITEM_REVEAL_MOVE_SEC = 0.55;

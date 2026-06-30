@@ -7,7 +7,29 @@ export const TEAM_PALETTE = [
     { colorBase: '#2563eb', colorLight: '#93c5fd', defaultPump: 26, shortName: '蓝' }
 ];
 
+/** 主线固定教学关数量（不含测试关） */
 export const TUTORIAL_LEVEL_COUNT = 3;
+
+/** 独立测试关，仅通过 ?test=ninja_dart 进入，不计入主线进度 */
+export const NINJA_DART_TEST_LEVEL = {
+    id: 'test-ninja-dart',
+    title: '忍者飞镖试炼',
+    testLevel: true,
+    balloonCountFactor: 0.78,
+    layoutRadiusScale: 0.92,
+    scatter: 0.04,
+    activeTeams: [0, 1, 2],
+    pump: [120, 120, 120],
+    forceNinjaDartOnPop: true,
+    dropConfig: {
+        ninja_dart: { chance: 1 },
+    },
+};
+
+/** @type {Record<string, object>} */
+export const TEST_LEVELS = {
+    ninja_dart: NINJA_DART_TEST_LEVEL,
+};
 
 /** 新手基础关（固定，不 procedurally 生成） */
 export const TUTORIAL_LEVELS = [
@@ -33,4 +55,3 @@ export const TUTORIAL_LEVELS = [
         pump: [80, 80, 30]
     }
 ];
-
