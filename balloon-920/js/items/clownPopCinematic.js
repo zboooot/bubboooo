@@ -1,5 +1,6 @@
 import * as Config from '../config.js';
 import { isClownBall, enqueueClownsNearPop } from './clownShared.js';
+import { enqueueRainbowsNearPop } from './rainbowBalloon.js';
 
 export const CLOWN_CINEMATIC_DURATION_SEC = 2;
 /** 爆破特效播完后再进入暗屏闪烁演出 */
@@ -55,6 +56,7 @@ export function beginClownPopCinematic(game, ball, fromChain = false) {
     });
 
     enqueueClownsNearPop(game, ball);
+    enqueueRainbowsNearPop(game, ball);
 
     const snapshot = {
         cx: ball.cx,

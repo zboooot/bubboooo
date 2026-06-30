@@ -11,3 +11,9 @@ export { ItemSpawnPlanner } from './ItemSpawnPlanner.js';
 export { ItemService } from './ItemService.js';
 export { ItemRevealPresentation } from './ItemRevealPresentation.js';
 export { NinjaDart, NinjaDartPathMode } from './NinjaDart.js';
+export {
+    isRainbowBall,
+    spawnRainbowBalloon,
+    ballsChainTogether,
+    enqueueRainbowsNearPop,
+} from './rainbowBalloon.js';

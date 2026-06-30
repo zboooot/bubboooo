@@ -1,5 +1,6 @@
 import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
+import { isRainbowBall } from '../items/rainbowBalloon.js';
 
 /** InputController */
 export class InputController {
@@ -70,6 +71,10 @@ export class InputController {
 
             const hitBall = game.pickBalloonAt(game.mouse.x, game.mouse.y);
             if (hitBall) {
+                if (isRainbowBall(hitBall)) {
+                    game.sfx.playDenied();
+                    return;
+                }
                 if (isClownBall(hitBall)) {
                     let minDist = 42;
                     for (const p of hitBall.particles) {

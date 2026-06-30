@@ -25,6 +25,7 @@ export class DebugPanelController {
             ['testCopyMax', 'clownCopyMax', 'number'],
             ['testTeamCount', 'teamCount', 'number'],
             ['testTetrisCount', 'tetrisWallCount', 'number'],
+            ['testRainbowCount', 'rainbowCount', 'number'],
             ['testItemMode', 'itemMode', 'string'],
         ];
         for (const [id, key, type] of fields) {
@@ -48,6 +49,7 @@ export class DebugPanelController {
             testCopyMax: this.params.clownCopyMax,
             testTeamCount: this.params.teamCount,
             testTetrisCount: this.params.tetrisWallCount,
+            testRainbowCount: this.params.rainbowCount,
             testItemMode: this.params.itemMode,
         };
         for (const [id, val] of Object.entries(map)) {
@@ -64,6 +66,7 @@ export class DebugPanelController {
             testCopyMax: 'clownCopyMax',
             testTeamCount: 'teamCount',
             testTetrisCount: 'tetrisWallCount',
+            testRainbowCount: 'rainbowCount',
             testItemMode: 'itemMode',
         };
         for (const [id, key] of Object.entries(ids)) {

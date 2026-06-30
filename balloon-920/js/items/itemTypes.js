@@ -73,6 +73,13 @@ export const ITEM_REGISTRY = {
         spawnsInBalloon: false,
         icon: '▦',
     },
+    rainbow_balloon: {
+        id: 'rainbow_balloon',
+        name: '彩虹气球',
+        defaultSource: ItemSource.FIELD,
+        spawnsInBalloon: false,
+        icon: '🌈',
+    },
 };
 
 export function getItemDef(itemId) {

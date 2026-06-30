@@ -8,6 +8,7 @@ export const DEFAULT_TEST_LAB = {
     teamCount: 3,
     itemMode: 'clown',
     tetrisWallCount: 1,
+    rainbowCount: 1,
     scatter: 0.2,
     layoutRadiusScale: 0.95,
 };
@@ -34,6 +35,7 @@ export function buildTestLabLevelSpec(params) {
         clownCopyMax: Math.max(p.clownCopyMin, p.clownCopyMax),
         itemMode: p.itemMode,
         tetrisWallCount: Math.max(0, p.tetrisWallCount ?? 0),
+        rainbowCount: Math.max(0, p.rainbowCount ?? 0),
         balloonCountFactor: 1,
         layoutRadiusScale: p.layoutRadiusScale ?? 0.95,
         scatter: p.scatter ?? 0.2,

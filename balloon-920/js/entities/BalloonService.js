@@ -7,7 +7,11 @@ import {
     enqueueClownsNearPop,
     popClownBalloon,
 } from '../items/clownBalloon.js';
-import { clownChainColorKey } from '../items/clownPopCinematic.js';
+import {
+    ballsChainTogether,
+    enqueueRainbowsNearPop,
+    isRainbowBall,
+} from '../items/rainbowBalloon.js';
 
 /** BalloonService */
 export class BalloonService {
@@ -241,7 +245,7 @@ export class BalloonService {
 
     schedulePopIfEmpty(ball) {
         const game = this.game;
-            if (isClownBall(ball)) return;
+            if (isClownBall(ball) || isRainbowBall(ball)) return;
             if (ball.air > 0) return;
             if (ball.imminentPopDelay == null) {
                 ball.imminentPopDelay = Config.FULL_POP_DELAY;
@@ -388,6 +392,10 @@ export class BalloonService {
             for (let i = 0; i < 18; i++) {
                 const a = Math.random() * Math.PI * 2;
                 const sp = 80 + Math.random() * 260;
+                const rainbowSpark = ['#f472b6', '#fb923c', '#facc15', '#4ade80', '#38bdf8', '#a78bfa'];
+                const sparkColor = isRainbowBall(ball)
+                    ? rainbowSpark[i % rainbowSpark.length]
+                    : ball.colorLight;
                 game.popEffects.push({
                     x: c.x,
                     y: c.y,
@@ -395,7 +403,7 @@ export class BalloonService {
                     vy: Math.sin(a) * sp,
                     life: 0.55 + Math.random() * 0.35,
                     maxLife: 1,
-                    color: ball.colorLight,
+                    color: sparkColor,
                     size: 2 + Math.random() * 4
                 });
             }
@@ -429,6 +437,7 @@ export class BalloonService {
                 ...extraCtx,
             });
             enqueueClownsNearPop(game, ball);
+            enqueueRainbowsNearPop(game, ball);
             const idx = game.balls.indexOf(ball);
             if (idx >= 0) game.destroyBall(idx);
             game.updateBallCount();
@@ -491,7 +500,7 @@ export class BalloonService {
             for (let i = 0; i < game.balls.length; i++) {
                 const other = game.balls[i];
                 if (other === ball) continue;
-                if (clownChainColorKey(other) !== clownChainColorKey(ball)) continue;
+                if (!ballsChainTogether(ball, other)) continue;
                 if (!game.ballsPhysicallyTouch(ball, other)) continue;
                 neighbors.push({ ball: other, gap: game.minParticleGap(ball, other) });
             }

@@ -3,6 +3,7 @@ import { TEAM_PALETTE, TUTORIAL_LEVEL_COUNT, TUTORIAL_LEVELS, TEST_LEVELS } from
 import { clamp, makeSeededRng, rollEphemeralSeed } from '../utils/math.js';
 import { buildTestLabLevelSpec } from './testLabLevel.js';
 import { spawnClownBalloon } from '../items/clownBalloon.js';
+import { spawnRainbowBalloon } from '../items/rainbowBalloon.js';
 
 /** LevelService */
 export class LevelService {
@@ -408,7 +409,9 @@ export class LevelService {
         if (level.itemMode === 'ninja_dart') {
             level.clownCount = 0;
             level.tetrisWallCount = 0;
+            level.rainbowCount = 0;
         }
+        if (level.itemMode !== 'rainbow') level.rainbowCount = 0;
         game.levelIndex = 0;
         game.currentLevelSpec = level;
         level.seed = rollEphemeralSeed(0x7e57);
@@ -436,7 +439,9 @@ export class LevelService {
         const normalCount = Math.max(0, level.balloonCount ?? 0);
         const clownCount =
             level.itemMode === 'clown' ? Math.max(0, level.clownCount ?? 0) : 0;
-        const total = Math.max(1, normalCount + clownCount);
+        const rainbowCount =
+            level.itemMode === 'rainbow' ? Math.max(0, level.rainbowCount ?? 0) : 0;
+        const total = Math.max(1, normalCount + clownCount + rainbowCount);
         const layout = game.computeBalloonFillLayout(1, level.layoutRadiusScale ?? 0.95);
         layout.count = total;
         const cols = layout.cols;
@@ -455,6 +460,11 @@ export class LevelService {
         const clownSlots = new Set();
         while (clownSlots.size < clownCount && clownSlots.size < total) {
             clownSlots.add(Math.floor(rng() * total));
+        }
+        const rainbowSlots = new Set();
+        for (let guard = 0; rainbowSlots.size < rainbowCount && guard < total * 12; guard++) {
+            const slot = Math.floor(rng() * total);
+            if (!clownSlots.has(slot)) rainbowSlots.add(slot);
         }
 
         for (let i = 0; i < total; i++) {
@@ -477,6 +487,12 @@ export class LevelService {
             const seedRadius = Config.MIN_BALLOON_RADIUS * radiusScale;
             if (clownSlots.has(i)) {
                 spawnClownBalloon(game, cx, cy, seedRadius, copyMeta);
+                const ball = game.balls[game.balls.length - 1];
+                game.onBalloonSpawn(ball, i, level);
+                continue;
+            }
+            if (rainbowSlots.has(i)) {
+                spawnRainbowBalloon(game, cx, cy, seedRadius);
                 const ball = game.balls[game.balls.length - 1];
                 game.onBalloonSpawn(ball, i, level);
                 continue;

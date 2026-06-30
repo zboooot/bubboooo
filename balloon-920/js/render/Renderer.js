@@ -1,5 +1,6 @@
 import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
+import { isRainbowBall } from '../items/rainbowBalloon.js';
 
 const JOKER_ASSETS = ['joker.png', 'joker2.png'];
 /** 低于此 alpha 的像素视为全透明，避免缩放后出现方形描边 */
@@ -17,6 +18,14 @@ export class Renderer {
             if (img.complete && img.naturalWidth) this._bakeJokerCanvas(img);
             return img;
         });
+
+        this.luckIconImage = new Image();
+        this.luckIconImage.decoding = 'async';
+        this.luckIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.luckIconImage), { once: true });
+        this.luckIconImage.src = new URL('../../assets/luck.png', import.meta.url).href;
+        if (this.luckIconImage.complete && this.luckIconImage.naturalWidth) {
+            this._bakeJokerCanvas(this.luckIconImage);
+        }
     }
 
     _bakeJokerCanvas(img) {
@@ -117,6 +126,132 @@ export class Renderer {
 
     drawClownFace(ball, cx, cy) {
         this.drawJokerIconAt(cx, cy, ball.radius);
+    }
+
+    _parseHexRgb(hex) {
+        const s = hex.replace('#', '');
+        return [
+            parseInt(s.slice(0, 2), 16),
+            parseInt(s.slice(2, 4), 16),
+            parseInt(s.slice(4, 6), 16),
+        ];
+    }
+
+    _lerpHexColor(a, b, t) {
+        const c0 = this._parseHexRgb(a);
+        const c1 = this._parseHexRgb(b);
+        const mix = (i) => Math.round(c0[i] + (c1[i] - c0[i]) * t);
+        return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+    }
+
+    /** @param {string[]} spectrum 首尾同色 */
+    _sampleRainbowSpectrum(spectrum, t) {
+        let u = t % 1;
+        if (u < 0) u += 1;
+        const seg = spectrum.length - 1;
+        const f = u * seg;
+        const i = Math.min(Math.floor(f), seg - 1);
+        return this._lerpHexColor(spectrum[i], spectrum[i + 1], f - i);
+    }
+
+    /**
+     * 按正面半球经纬采样：色带沿球面弯曲，缓慢环向平移（非直线条纹）
+     */
+    _paintSphericalRainbowOverlay(ctx, ball, cx, cy, r, simTime) {
+        const spectrum = ['#ff5c5c', '#ffb347', '#ffe066', '#69db7c', '#4dabf7', '#9775fa', '#ff5c5c'];
+        const bandRepeats = 0.58;
+        const phase = (simTime * 0.2 + (ball.rainbowHueOffset ?? 0) * 0.002) % 1;
+
+        const pad = Math.ceil(r * 1.28);
+        const w = pad * 2;
+        const h = pad * 2;
+        const layer = document.createElement('canvas');
+        layer.width = w;
+        layer.height = h;
+        const lctx = layer.getContext('2d');
+        const img = lctx.createImageData(w, h);
+        const data = img.data;
+        const ox = cx - pad;
+        const oy = cy - pad;
+        const invR = 1 / Math.max(r, 1);
+
+        for (let py = 0; py < h; py++) {
+            for (let px = 0; px < w; px++) {
+                const dx = (ox + px - cx) * invR;
+                const dy = (oy + py - cy) * invR;
+                const d2 = dx * dx + dy * dy;
+                if (d2 > 1.02) continue;
+                const dz = Math.sqrt(Math.max(0, 1 - d2));
+                const lon = Math.atan2(dx, dz);
+                let u = ((lon / (Math.PI * 2) + 0.5) * bandRepeats + phase) % 1;
+                if (u < 0) u += 1;
+                const rgb = this._sampleRainbowSpectrum(spectrum, u);
+                const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(rgb);
+                if (!m) continue;
+                const idx = (py * w + px) * 4;
+                data[idx] = Number(m[1]);
+                data[idx + 1] = Number(m[2]);
+                data[idx + 2] = Number(m[3]);
+                data[idx + 3] = 255;
+            }
+        }
+        lctx.putImageData(img, 0, 0);
+        ctx.drawImage(layer, ox, oy);
+    }
+
+    /** 灰白底 + 70% 透明球面环向彩虹（路径需已 closePath） */
+    drawRainbowBalloonFill(ctx, ball, cx, cy) {
+        const game = this.game;
+        const r = ball.radius;
+
+        const base = ctx.createRadialGradient(
+            cx - r * 0.32, cy - r * 0.32, r * 0.08,
+            cx, cy, r * 1.08,
+        );
+        base.addColorStop(0, '#f8f8fb');
+        base.addColorStop(0.55, '#e8e9ef');
+        base.addColorStop(1, '#c9cad4');
+        ctx.fillStyle = base;
+        ctx.fill();
+
+        ctx.save();
+        ctx.clip();
+
+        ctx.globalAlpha = 0.7;
+        this._paintSphericalRainbowOverlay(ctx, ball, cx, cy, r, game.simTime);
+        ctx.globalAlpha = 1;
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.beginPath();
+        ctx.ellipse(
+            cx - r * 0.38, cy - r * 0.38,
+            r * 0.22, r * 0.13, -Math.PI / 4, 0, Math.PI * 2,
+        );
+        ctx.fill();
+        ctx.restore();
+    }
+
+    /** 彩虹气球中央 luck.png 幸运草图标 */
+    drawRainbowLuckyClover(ball, cx, cy) {
+        const ctx = this.game.dom.ctx;
+        const img = this.luckIconImage;
+        if (!img?.complete || !img.naturalWidth) return;
+
+        const source = this._jokerDrawable(img);
+        const sw = source.width || source.naturalWidth;
+        const sh = source.height || source.naturalHeight;
+        const targetH = ball.radius * 0.92;
+        const scale = targetH / sh;
+        const iw = sw * scale;
+        const ih = sh * scale;
+        const x = cx - iw * 0.5;
+        const y = cy - ih * 0.5 - ball.radius * 0.02;
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
+        ctx.restore();
     }
 
     drawClownPopCinematic() {
@@ -291,17 +426,20 @@ export class Renderer {
                 for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
                 ctx.closePath();
 
-                const grad = ctx.createRadialGradient(
-                    cx - ball.radius * 0.3, cy - ball.radius * 0.3, ball.radius * 0.1,
-                    cx, cy, ball.radius * 1.1
-                );
-                grad.addColorStop(0, ball.colorLight);
-                grad.addColorStop(1, ball.colorBase);
+                if (isRainbowBall(ball)) {
+                    game.drawRainbowBalloonFill(ctx, ball, cx, cy);
+                } else {
+                    const grad = ctx.createRadialGradient(
+                        cx - ball.radius * 0.3, cy - ball.radius * 0.3, ball.radius * 0.1,
+                        cx, cy, ball.radius * 1.1
+                    );
+                    grad.addColorStop(0, ball.colorLight);
+                    grad.addColorStop(1, ball.colorBase);
+                    ctx.fillStyle = grad;
+                    ctx.fill();
+                }
 
-                ctx.fillStyle = grad;
-                ctx.fill();
-
-                if (!isClownBall(ball)) {
+                if (!isClownBall(ball) && !isRainbowBall(ball)) {
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
                     ctx.beginPath();
                     ctx.ellipse(
@@ -311,8 +449,10 @@ export class Renderer {
                     ctx.fill();
                     game.drawImminentPopBallFx(ball, cx, cy);
                     game.drawBallAirLabel(ball, cx, cy);
-                } else {
+                } else if (isClownBall(ball)) {
                     game.drawClownFace(ball, cx, cy);
+                } else if (isRainbowBall(ball)) {
+                    game.drawRainbowLuckyClover(ball, cx, cy);
                 }
             }
 

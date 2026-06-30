@@ -1,5 +1,6 @@
 import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
+import { isRainbowBall } from '../items/rainbowBalloon.js';
 
 /** GameFlowService */
 export class GameFlowService {
@@ -12,7 +13,7 @@ export class GameFlowService {
             let n = 0;
             for (let i = 0; i < game.balls.length; i++) {
                 const b = game.balls[i];
-                if (isClownBall(b)) continue;
+                if (isClownBall(b) || isRainbowBall(b)) continue;
                 if (game.pumpSlotForBall(b) === slot) n++;
             }
             return n;
@@ -20,7 +21,7 @@ export class GameFlowService {
 
     canFullyPopBallNow(ball) {
         const game = this.game;
-            if (isClownBall(ball)) return false;
+            if (isClownBall(ball) || isRainbowBall(ball)) return false;
             if (ball.air <= 0) return true;
             const slot = game.pumpSlotForBall(ball);
             if (slot < 0) return false;
