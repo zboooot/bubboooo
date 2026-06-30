@@ -124,8 +124,28 @@ export class Renderer {
         return { x, y, w: iw, h: ih };
     }
 
+    drawClownEmojiAt(cx, cy, ballRadius) {
+        const ctx = this.game.dom.ctx;
+        const fontSize = Math.max(20, ballRadius * 1.28);
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+        ctx.fillText('🤡', cx, cy);
+        ctx.restore();
+    }
+
     drawClownFace(ball, cx, cy) {
-        this.drawJokerIconAt(cx, cy, ball.radius);
+        this.drawClownEmojiAt(cx, cy, ball.radius);
+    }
+
+    drawEmbeddedItemIcon(ball, cx, cy) {
+        const embedded = ball.embeddedItem;
+        if (!embedded?.itemId) return;
+        const icon = embedded.def?.icon;
+        if (icon === '🤡') {
+            this.drawClownEmojiAt(cx, cy, ball.radius * 0.72);
+        }
     }
 
     _parseHexRgb(hex) {
@@ -263,7 +283,6 @@ export class Renderer {
         const snap = cine.snapshot;
         const { cx, cy, radius, colorBase, colorLight } = snap;
         const t = Math.min(1, cine.elapsed / cine.duration);
-        const purple = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(game.simTime * 11));
 
         ctx.save();
         const darkA = Math.min(0.88, 0.42 + t * 0.46);
@@ -283,16 +302,11 @@ export class Renderer {
 
         ctx.beginPath();
         ctx.arc(cx, cy, radius * 1.06, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(168, 85, 247, ${0.15 + 0.45 * purple})`;
-        ctx.lineWidth = 3 + 2 * purple;
+        ctx.strokeStyle = `rgba(168, 85, 247, 0.35)`;
+        ctx.lineWidth = 3;
         ctx.stroke();
 
-        game.drawJokerIconAt(cx, cy, radius, {
-            burn: t,
-            purpleGlow: purple,
-            flashAlternate: true,
-            flashHz: 2,
-        });
+        game.drawClownEmojiAt(cx, cy, radius);
         ctx.restore();
     }
 
@@ -449,6 +463,7 @@ export class Renderer {
                     ctx.fill();
                     game.drawImminentPopBallFx(ball, cx, cy);
                     game.drawBallAirLabel(ball, cx, cy);
+                    game.drawEmbeddedItemIcon?.(ball, cx, cy);
                 } else if (isClownBall(ball)) {
                     game.drawClownFace(ball, cx, cy);
                 } else if (isRainbowBall(ball)) {
@@ -463,6 +478,20 @@ export class Renderer {
                 const r = parseInt(fx.color.slice(1, 3), 16);
                 const g = parseInt(fx.color.slice(3, 5), 16);
                 const b = parseInt(fx.color.slice(5, 7), 16);
+                if (fx.kind === 'streak') {
+                    const spd = Math.hypot(fx.vx, fx.vy) || 1;
+                    const ux = fx.vx / spd;
+                    const uy = fx.vy / spd;
+                    const len = (fx.streakLen ?? 14) * (0.35 + alpha);
+                    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+                    ctx.lineWidth = Math.max(1, fx.size * 0.55);
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(fx.x - ux * len * 0.35, fx.y - uy * len * 0.35);
+                    ctx.lineTo(fx.x + ux * len, fx.y + uy * len);
+                    ctx.stroke();
+                    continue;
+                }
                 ctx.beginPath();
                 ctx.arc(fx.x, fx.y, fx.size * alpha, 0, Math.PI * 2);
                 ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;

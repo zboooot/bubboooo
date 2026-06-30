@@ -42,6 +42,27 @@ export class ItemService {
         this.game.itemRevealActive = false;
         this.game.itemRevealAnchorHold = false;
         this.dartActionConsumed = false;
+        this.game.pendingClownItemReveals = [];
+        this.game.pendingClownBurstSnapshots = [];
+        this.game.pendingClownActivations = [];
+    }
+
+    /**
+     * 小丑激活：与忍者飞镖相同的停留 → 飞向中央 → 淡出揭晓，结束后直接复制气球
+     * @returns {boolean}
+     */
+    showClownActivationReveal(snapshot) {
+        if (this.itemReveal || this.ninjaDarts.length > 0) return false;
+        if ((this.game.clownBurstSpawn?.remaining ?? 0) > 0) return false;
+        this._startItemReveal('clown_balloon', snapshot.cx, snapshot.cy, {
+            clownSnapshot: snapshot,
+            resumeClownCinematic: true,
+        });
+        return this.itemReveal != null;
+    }
+
+    tryDrainPendingClownItemReveals() {
+        this._drainPendingClownItemReveals();
     }
 
     onBalloonSpawn(ball, spawnIndex, level) {
@@ -109,6 +130,9 @@ export class ItemService {
 
     _startItemReveal(itemId, anchorX, anchorY, pendingOpts) {
         if (this.itemReveal || this.ninjaDarts.length > 0) return;
+        if ((this.game.clownBurstSpawn?.remaining ?? 0) > 0 && !pendingOpts.resumeClownCinematic) {
+            return;
+        }
 
         this.game.activeInflateBall = null;
         this.game.dragNode = null;
@@ -165,7 +189,23 @@ export class ItemService {
         this.itemReveal = null;
         this.game.itemRevealActive = false;
         this.game.itemRevealAnchorHold = false;
-        this._executeItemEffect(itemId, pendingOpts);
+        if (pendingOpts.resumeClownCinematic && pendingOpts.clownSnapshot) {
+            this.game.resumeClownCinematicAfterReveal?.(pendingOpts.clownSnapshot);
+        } else {
+            this._executeItemEffect(itemId, pendingOpts);
+        }
+        this._drainPendingClownItemReveals();
+    }
+
+    _drainPendingClownItemReveals() {
+        const game = this.game;
+        const queue = game.pendingClownItemReveals;
+        if (!queue?.length) return;
+        if (this.itemReveal || this.ninjaDarts.length > 0) return;
+        if ((game.clownBurstSpawn?.remaining ?? 0) > 0) return;
+
+        const snapshot = queue.shift();
+        this.showClownActivationReveal(snapshot);
     }
 
     _updateNinjaDarts(dt) {

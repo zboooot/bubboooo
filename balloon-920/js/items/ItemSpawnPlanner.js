@@ -25,8 +25,6 @@ export class ItemSpawnPlanner {
      * @returns {Item|null}
      */
     planEmbeddedForBalloon(level, spawnIndex, ball, rng) {
-        // TODO: 读取 level.embeddedItems 固定表
-        void ball;
         void rng;
 
         const entries = level.embeddedItems;

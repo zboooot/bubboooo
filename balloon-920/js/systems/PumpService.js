@@ -186,6 +186,46 @@ export class PumpService {
         }
     }
 
+    ensurePumpFuelLabelState() {
+        const game = this.game;
+        const n = game.pumpFuelRemaining.length;
+        if (game.pumpFuelLabelScale.length === n) return;
+        game.resetPumpFuelLabelAnims();
+    }
+
+    resetPumpFuelLabelAnims() {
+        const game = this.game;
+        const fuels = game.pumpFuelRemaining;
+        game.pumpFuelLabelScale = fuels.map(() => 1);
+    }
+
+    bumpPumpFuelLabelOnFuelUse(pumpIdx, fuelBefore) {
+        const game = this.game;
+        game.ensurePumpFuelLabelState();
+        const after = game.pumpFuelRemaining[pumpIdx] ?? 0;
+        const used = fuelBefore - after;
+        if (used <= 0 || pumpIdx < 0) return;
+
+        let scale = game.pumpFuelLabelScale[pumpIdx] ?? 1;
+        scale = Math.max(0.5, scale - 0.035 - Math.min(used, 4) * 0.022);
+        const ceilBefore = Math.ceil(fuelBefore);
+        const ceilAfter = Math.ceil(after);
+        if (ceilAfter < ceilBefore) {
+            scale = Math.min(scale, 0.62);
+        }
+        game.pumpFuelLabelScale[pumpIdx] = scale;
+    }
+
+    updatePumpFuelLabelAnims() {
+        const game = this.game;
+        const scales = game.pumpFuelLabelScale;
+        if (!scales.length) return;
+        const k = Math.min(1, 11 * Config.dt);
+        for (let i = 0; i < scales.length; i++) {
+            scales[i] += (1 - scales[i]) * k;
+        }
+    }
+
     drawPumpIcon(x, y, w, h, tool, index, selected, fuelRemaining) {
         const game = this.game;
             const ctx = game.dom.ctx;

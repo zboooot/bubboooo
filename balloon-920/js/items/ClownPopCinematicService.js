@@ -1,6 +1,7 @@
 import * as Config from '../config.js';
 import {
     isGameplayFrozen as checkGameplayFrozen,
+    resumeClownCinematicAfterReveal as runResumeClownCinematic,
     updateClownPopCinematic as tickClownPopCinematic,
     updateBalloonSpawnGrows as tickBalloonSpawnGrows,
     updateClownBurstSpawn as tickClownBurstSpawn,
@@ -14,6 +15,10 @@ export class ClownPopCinematicService {
 
     isGameplayFrozen() {
         return checkGameplayFrozen(this.game);
+    }
+
+    resumeClownCinematicAfterReveal(snapshot) {
+        runResumeClownCinematic(this.game, snapshot);
     }
 
     updateClownPopCinematic() {

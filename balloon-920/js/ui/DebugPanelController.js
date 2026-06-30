@@ -94,6 +94,7 @@ export class DebugPanelController {
     }
 
     startNormalGame() {
+        this.game.testLevelId = null;
         this.game.lastTestLabParams = null;
         this.game.appScreen = 'game';
         if (this.game.dom.startScreenEl) {

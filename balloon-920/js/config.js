@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.13';
+export const APP_VERSION = '1.14';
 export const APP_VERSION_DATE = '2026-06-30';
 
 export const LOGICAL_WIDTH = 360;
@@ -75,7 +75,8 @@ export const NINJA_DART_EXIT_Y = GROUND_Y - 88;
 export const NINJA_DART_LEFT_APEX_X = 26;
 /** 路线 B：左上 → 右顶点 → 左下 */
 export const NINJA_DART_RIGHT_APEX_X = LOGICAL_WIDTH - 26;
-export const NINJA_DART_DEFAULT_DROP_CHANCE = 0.18;
+/** 飞镖仅由关卡 popItemDrops 投放，全局默认不随机掉落 */
+export const NINJA_DART_DEFAULT_DROP_CHANCE = 0;
 
 /** 爆炸类道具揭晓：爆破点停留 → 暗屏展示 → 淡出 → 效果发动 */
 export const ITEM_REVEAL_ANCHOR_HOLD_SEC = 0.5;

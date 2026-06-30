@@ -199,6 +199,164 @@ export class BalloonService {
         return Math.min(cap, Math.max(0, Math.ceil(filled)));
     }
 
+    /** @param {number} displayAir displayAirForLabel 返回值 */
+    labelHeatFromDisplay(displayAir) {
+        const start = Config.AIR_LABEL_HEAT_START;
+        const cap = Config.AIR_CAPACITY;
+        if (displayAir < start) return 0;
+        const t = Math.min(1, (displayAir - start) / (cap - start));
+        const k = Config.AIR_LABEL_HEAT_EXP;
+        return (Math.exp(k * t) - 1) / (Math.exp(k) - 1);
+    }
+
+    labelHeatForBall(ball) {
+        const display = this.displayAirForLabel(ball);
+        let heat = this.labelHeatFromDisplay(display);
+        if (ball.imminentPopDelay != null) heat = 1;
+        return heat;
+    }
+
+    /** @param {number} heat 0–1 */
+    labelStyleFromHeat(heat, alphaMul = 1) {
+        const h = Math.max(0, Math.min(1, heat));
+        const a = Math.max(0, Math.min(1, alphaMul));
+        const r = 255;
+        const g = Math.round(255 + (58 - 255) * h);
+        const b = Math.round(255 + (52 - 255) * h);
+        const strokeR = Math.round(30 + 200 * h);
+        return {
+            fill: `rgba(${r},${g},${b},${0.96 * a})`,
+            stroke: `rgba(${strokeR},${Math.round(12 * (1 - h))},${Math.round(8 * (1 - h))},${(0.42 + 0.38 * h) * a})`,
+        };
+    }
+
+    /**
+     * 数字到 100 后的标签动效：瞬间冲击放大 + 全程渐隐
+     * @returns {{ scaleMul: number, alpha: number } | null}
+     */
+    imminentLabelPresentation(ball) {
+        if (ball.imminentPopDelay == null) return null;
+        const total = Config.FULL_POP_DELAY;
+        const t = 1 - Math.max(0, ball.imminentPopDelay) / total;
+        const peak = Config.AIR_LABEL_POP_PEAK_SCALE;
+        const attack = Config.AIR_LABEL_POP_ATTACK_SEC / total;
+        let scaleMul;
+        if (t < attack) {
+            const u = t / Math.max(attack, 1e-6);
+            scaleMul = 1 + (peak - 1) * (1 - (1 - u) ** 3);
+        } else {
+            const u = (t - attack) / Math.max(1 - attack, 1e-6);
+            scaleMul = peak - u * (peak - 1) * 0.35;
+        }
+        const alpha = Math.max(0, 1 - t);
+        const whiteFlash = Math.max(0, 1 - t * 3.2);
+        return { scaleMul, alpha, whiteFlash };
+    }
+
+    beginImminentPopPreview(ball) {
+        ball.imminentSparkAccum = 0;
+        ball.imminentBurstSeed = Math.random() * Math.PI * 2;
+        this.spawnImminentPopSparks(ball, 1);
+        this.applyCriticalPopShake(ball);
+    }
+
+    tickImminentPopPreview(ball, dt) {
+        const game = this.game;
+        if (ball.imminentPopDelay == null) return;
+        ball.imminentSparkAccum = (ball.imminentSparkAccum ?? 0) + dt;
+        const interval = Config.IMMINENT_POP_SPARK_INTERVAL;
+        while (ball.imminentSparkAccum >= interval) {
+            ball.imminentSparkAccum -= interval;
+            this.spawnImminentPopSparks(ball, 0.42);
+        }
+        this.applyCriticalPopShake(ball);
+        game.applyInflationShake(ball);
+    }
+
+    spawnImminentPopSparks(ball, intensity = 1) {
+        const game = this.game;
+        game.syncBallBounds(ball);
+        const cx = ball.cx;
+        const cy = ball.cy;
+        const rays = Math.max(6, Math.round(14 * intensity));
+        const seed = ball.imminentBurstSeed ?? 0;
+        for (let i = 0; i < rays; i++) {
+            const a = seed + (i / rays) * Math.PI * 2 + (Math.random() - 0.5) * 0.12;
+            const sp = (280 + Math.random() * 420) * intensity;
+            const white = Math.random() < 0.72;
+            game.popEffects.push({
+                kind: 'streak',
+                x: cx + Math.cos(a) * ball.boundsRadius * 0.15,
+                y: cy + Math.sin(a) * ball.boundsRadius * 0.15,
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp,
+                life: 0.32 + Math.random() * 0.22,
+                maxLife: 0.54,
+                color: white ? '#fffef8' : '#ffe8c8',
+                size: 2 + Math.random() * 2.5 * intensity,
+                streakLen: 10 + Math.random() * 18 * intensity,
+            });
+        }
+        const specks = Math.max(2, Math.round(6 * intensity));
+        for (let j = 0; j < specks; j++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = (180 + Math.random() * 260) * intensity;
+            game.popEffects.push({
+                x: cx,
+                y: cy,
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp,
+                life: 0.18 + Math.random() * 0.2,
+                maxLife: 0.38,
+                color: '#ffffff',
+                size: 1.5 + Math.random() * 2,
+            });
+        }
+    }
+
+    applyCriticalPopShake(ball) {
+        const game = this.game;
+        const pts = ball.particles;
+        const c = game.polygonCentroid(pts);
+        const mag = 280 * Config.dt;
+        const spin = game.simTime * 52;
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            const nx = p.x - c.x;
+            const ny = p.y - c.y;
+            const len = Math.hypot(nx, ny) || 1;
+            const wave = Math.sin(spin + i * 1.1);
+            p.vx += (nx / len) * wave * mag + (Math.random() - 0.5) * mag * 2.4;
+            p.vy += (ny / len) * wave * mag + (Math.random() - 0.5) * mag * 2.4;
+        }
+    }
+
+    /** @returns {number} 0–1，当前气量 ≥90 时指数趋红 */
+    displayAirLabelRedBlend(ball) {
+        const display = this.displayAirForLabel(ball);
+        const start = Config.AIR_LABEL_RED_START;
+        if (display < start) return 0;
+        const span = Config.AIR_CAPACITY - start;
+        const t = Math.min(1, Math.max(0, (display - start) / span));
+        const k = Config.AIR_LABEL_RED_EXP;
+        if (t <= 0) return 0;
+        return (Math.exp(k * t) - 1) / (Math.exp(k) - 1);
+    }
+
+    /**
+     * 气球标签数字：当前气量 0–100（100 = 即将撑爆）。
+     * 内部 ball.air 仍为「剩余可打气量」，与视觉/打气逻辑一致。
+     * @param {object} ball
+     * @param {number} [remainingAir] 可选，用于打气前后对比动画
+     */
+    displayAirForLabel(ball, remainingAir) {
+        const cap = Config.AIR_CAPACITY;
+        const rem = remainingAir !== undefined ? remainingAir : ball.air;
+        if (rem <= 0 && ball.imminentPopDelay != null) return cap;
+        const filled = cap - Math.max(0, rem);
+        return Math.min(cap, Math.max(0, Math.ceil(filled)));
+    }
+
     /** @returns {number} 0–1，当前气量 ≥90 时指数趋红 */
     displayAirLabelRedBlend(ball) {
         const display = this.displayAirForLabel(ball);
@@ -497,10 +655,20 @@ export class BalloonService {
         const game = this.game;
             game.syncBallBounds(ball);
             const neighbors = [];
+            const fromRainbow = isRainbowBall(ball);
+            const chainColor = fromRainbow ? ball.chainPopColor : null;
+            if (fromRainbow && chainColor == null) return [];
+
             for (let i = 0; i < game.balls.length; i++) {
                 const other = game.balls[i];
                 if (other === ball) continue;
-                if (!ballsChainTogether(ball, other)) continue;
+                if (fromRainbow) {
+                    if (isRainbowBall(other)) continue;
+                    if (!ballsChainTogether(ball, other, chainColor)) continue;
+                } else {
+                    if (isRainbowBall(other)) continue;
+                    if (!ballsChainTogether(ball, other)) continue;
+                }
                 if (!game.ballsPhysicallyTouch(ball, other)) continue;
                 neighbors.push({ ball: other, gap: game.minParticleGap(ball, other) });
             }

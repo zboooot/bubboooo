@@ -4,13 +4,23 @@ export const TEAM_PALETTE = [
     { colorBase: '#0ea5b7', colorLight: '#5eead4', defaultPump: 30, shortName: '青' },
     { colorBase: '#e85d04', colorLight: '#ffb366', defaultPump: 28, shortName: '橙' },
     { colorBase: '#16a34a', colorLight: '#86efac', defaultPump: 26, shortName: '绿' },
-    { colorBase: '#2563eb', colorLight: '#93c5fd', defaultPump: 26, shortName: '蓝' }
+    { colorBase: '#2563eb', colorLight: '#93c5fd', defaultPump: 26, shortName: '蓝' },
 ];
 
-/** 主线固定教学关数量（不含测试关） */
+/**
+ * 关卡道具字段（主线 / 测试关共用）：
+ * - fieldBalloonSlots: [{ spawnIndex, kind: 'clown'|'rainbow' }]
+ * - popItemDrops: [{ spawnIndex, itemId }]
+ * - tetrisWallCount: number
+ * - embeddedItems: [{ spawnIndex, itemId, meta? }]
+ *
+ * 主线投放（levelMainlineItems.js）：
+ * 1–2 关无道具；3 关 1 次随机飞镖；4 关固定 1 彩虹；5–14 关随机 1–2 种道具；
+ * 15 关起墙/小丑加权 + 低概率飞镖/彩虹。
+ */
+
 export const TUTORIAL_LEVEL_COUNT = 3;
 
-/** 独立测试关，仅通过 ?test=ninja_dart 进入，不计入主线进度 */
 export const NINJA_DART_TEST_LEVEL = {
     id: 'test-ninja-dart',
     title: '忍者飞镖试炼',
@@ -20,10 +30,11 @@ export const NINJA_DART_TEST_LEVEL = {
     scatter: 0.04,
     activeTeams: [0, 1, 2],
     pump: [120, 120, 120],
-    forceNinjaDartOnPop: true,
-    dropConfig: {
-        ninja_dart: { chance: 1 },
-    },
+    popItemDrops: [
+        { spawnIndex: 2, itemId: 'ninja_dart' },
+        { spawnIndex: 6, itemId: 'ninja_dart' },
+        { spawnIndex: 11, itemId: 'ninja_dart' },
+    ],
 };
 
 /** @type {Record<string, object>} */
@@ -31,27 +42,26 @@ export const TEST_LEVELS = {
     ninja_dart: NINJA_DART_TEST_LEVEL,
 };
 
-/** 新手基础关（固定，不 procedurally 生成） */
 export const TUTORIAL_LEVELS = [
     {
         id: 1,
         title: '双筒热身',
         balloonCountFactor: 1,
         activeTeams: [0, 1],
-        pump: [80, 80]
+        pump: [80, 80],
     },
     {
         id: 2,
         title: '三色加厚',
         balloonCountFactor: 1.12,
         activeTeams: [0, 1, 2],
-        pump: [80, 80, 76]
+        pump: [80, 80, 76],
     },
     {
         id: 3,
         title: '紧油考验',
         balloonCountFactor: 1.2,
         activeTeams: [0, 1, 2],
-        pump: [80, 80, 30]
-    }
+        pump: [80, 80, 30],
+    },
 ];

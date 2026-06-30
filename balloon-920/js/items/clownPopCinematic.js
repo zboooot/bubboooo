@@ -2,9 +2,6 @@ import * as Config from '../config.js';
 import { isClownBall, enqueueClownsNearPop } from './clownShared.js';
 import { enqueueRainbowsNearPop } from './rainbowBalloon.js';
 
-export const CLOWN_CINEMATIC_DURATION_SEC = 2;
-/** 爆破特效播完后再进入暗屏闪烁演出 */
-export const CLOWN_CINEMATIC_DELAY_SEC = 0.5;
 const BURST_SPAWN_INTERVAL_SEC = 0.36;
 
 /** 小丑按白色球计入同色连锁（仅颜色键，仍不可打气） */
@@ -13,15 +10,57 @@ export function clownChainColorKey(ball) {
     return ball.colorBase;
 }
 
-/**
- * @param {import('../BalloonGameApp.js').BalloonGameApp} game
- */
-export function isClownCinematicShowing(game) {
-    return game.clownCinematic?.phase === 'play';
+/** @param {import('../BalloonGameApp.js').BalloonGameApp} game */
+export function isClownCinematicShowing(_game) {
+    return false;
 }
 
-export function isGameplayFrozen(game) {
-    return isClownCinematicShowing(game);
+export function isGameplayFrozen(_game) {
+    return false;
+}
+
+function isClownActivationBusy(game) {
+    return !!game.itemReveal || (game.clownBurstSpawn?.remaining ?? 0) > 0;
+}
+
+/** 揭晓结束后直接复制气球（不再播暗屏演出） */
+export function resumeClownCinematicAfterReveal(game, snapshot) {
+    if (!snapshot) return;
+    if (isClownActivationBusy(game)) {
+        if (!game.pendingClownBurstSnapshots) game.pendingClownBurstSnapshots = [];
+        game.pendingClownBurstSnapshots.push(snapshot);
+        return;
+    }
+    spawnClownBurstFromSnapshot(game, snapshot);
+}
+
+function spawnClownBurstFromSnapshot(game, snapshot) {
+    try {
+        startClownBurstSpawn(game, snapshot);
+    } catch (err) {
+        console.error('[clown] spawn failed', err);
+    }
+    game.checkLevelWin();
+    game.checkLevelLose();
+    game.tryDrainPendingClownItemReveals?.();
+}
+
+function drainPendingClownBurstSnapshots(game) {
+    const queue = game.pendingClownBurstSnapshots;
+    if (!queue?.length || isClownActivationBusy(game)) return;
+    const snapshot = queue.shift();
+    spawnClownBurstFromSnapshot(game, snapshot);
+}
+
+function drainPendingClownActivations(game) {
+    const queue = game.pendingClownActivations;
+    if (!queue?.length || isClownActivationBusy(game)) return;
+    const next = queue.shift();
+    if (!next?.ball || !game.balls.includes(next.ball)) {
+        drainPendingClownActivations(game);
+        return;
+    }
+    beginClownPopCinematic(game, next.ball, next.fromChain);
 }
 
 /**
@@ -30,9 +69,9 @@ export function isGameplayFrozen(game) {
 export function beginClownPopCinematic(game, ball, fromChain = false) {
     if (!game.balls.includes(ball) || !isClownBall(ball)) return;
 
-    if (game.clownCinematic) {
-        if (!game.clownCinematic.waitingClowns) game.clownCinematic.waitingClowns = [];
-        game.clownCinematic.waitingClowns.push({ ball, fromChain });
+    if (isClownActivationBusy(game)) {
+        if (!game.pendingClownActivations) game.pendingClownActivations = [];
+        game.pendingClownActivations.push({ ball, fromChain });
         return;
     }
 
@@ -77,61 +116,15 @@ export function beginClownPopCinematic(game, ball, fromChain = false) {
     game.pendingDragParticle = null;
     game.pointerDown = false;
 
-    game.clownCinematic = {
-        phase: 'delay',
-        delayRemaining: CLOWN_CINEMATIC_DELAY_SEC,
-        elapsed: 0,
-        duration: CLOWN_CINEMATIC_DURATION_SEC,
-        snapshot,
-        waitingClowns: [],
-    };
-}
-
-/**
- * @param {import('../BalloonGameApp.js').BalloonGameApp} game
- */
-export function updateClownPopCinematic(game, dt) {
-    const cine = game.clownCinematic;
-    if (!cine) return;
-
-    if (cine.phase === 'delay') {
-        cine.delayRemaining -= dt;
-        if (cine.delayRemaining > 0) return;
-        cine.phase = 'play';
-        cine.elapsed = 0;
-        game.activeInflateBall = null;
-        game.dragNode = null;
-        game.pendingDragParticle = null;
-        game.pointerDown = false;
-        return;
-    }
-
-    if (cine.phase !== 'play') return;
-
-    cine.elapsed += dt;
-    if (cine.elapsed < cine.duration) return;
-
-    const waiting = (cine.waitingClowns ?? []).slice();
-    game.clownCinematic = null;
-    try {
-        startClownBurstSpawn(game, cine.snapshot);
-    } catch (err) {
-        console.error('[clown cinematic] spawn failed', err);
-    }
-
-    game.checkLevelWin();
-    game.checkLevelLose();
-
-    for (let i = 0; i < waiting.length; i++) {
-        const item = waiting[i];
-        if (!game.balls.includes(item.ball)) continue;
-        beginClownPopCinematic(game, item.ball, item.fromChain);
-        if (game.clownCinematic) {
-            game.clownCinematic.waitingClowns = waiting.slice(i + 1).filter((w) => game.balls.includes(w.ball));
-        }
-        break;
+    const started = game.showClownActivationReveal?.(snapshot);
+    if (!started) {
+        if (!game.pendingClownItemReveals) game.pendingClownItemReveals = [];
+        game.pendingClownItemReveals.push(snapshot);
     }
 }
+
+/** 保留挂载点；暗屏演出已移除 */
+export function updateClownPopCinematic(_game, _dt) {}
 
 function applyBalloonDropFromTopVelocity(ball, rng = Math.random) {
     const dropVy = 95 + rng() * 75;
@@ -150,7 +143,9 @@ function applyBalloonDropFromTopVelocity(ball, rng = Math.random) {
 export function updateClownBurstSpawn(game, dt) {
     const burst = game.clownBurstSpawn;
     if (!burst || burst.remaining <= 0) {
-        game.clownBurstSpawn = null;
+        if (burst) game.clownBurstSpawn = null;
+        drainPendingClownBurstSnapshots(game);
+        drainPendingClownActivations(game);
         return;
     }
 
@@ -163,7 +158,11 @@ export function updateClownBurstSpawn(game, dt) {
         game.updateBallCount();
     }
 
-    if (burst.remaining <= 0) game.clownBurstSpawn = null;
+    if (burst.remaining <= 0) {
+        game.clownBurstSpawn = null;
+        drainPendingClownBurstSnapshots(game);
+        drainPendingClownActivations(game);
+    }
 }
 
 /** 保留接口，当前复制球不再使用原地挤出生长 */

@@ -115,6 +115,23 @@ export class TetrisWallService {
         return { top, bottom };
     }
 
+    /** @returns {{ top: number, bottom: number } | null} */
+    _balloonVerticalExtents() {
+        const game = this.game;
+        if (!game.balls.length) return null;
+        const gap = this._balloonKeepOutGap();
+        let top = Infinity;
+        let bottom = -Infinity;
+        for (let i = 0; i < game.balls.length; i++) {
+            const ball = game.balls[i];
+            game.syncBallBounds(ball);
+            const r = Math.max(ball.boundsRadius, ball.radius) + gap;
+            top = Math.min(top, ball.cy - r);
+            bottom = Math.max(bottom, ball.cy + r);
+        }
+        return { top, bottom };
+    }
+
     _overlapsBalls(cells) {
         const game = this.game;
         const gap = this._balloonKeepOutGap();

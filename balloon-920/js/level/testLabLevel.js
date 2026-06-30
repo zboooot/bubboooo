@@ -1,4 +1,5 @@
 import { TEAM_PALETTE } from './levelData.js';
+import { defaultNinjaDartPopDrops } from './levelItemPlacement.js';
 
 export const DEFAULT_TEST_LAB = {
     balloonCount: 10,
@@ -45,8 +46,8 @@ export function buildTestLabLevelSpec(params) {
     };
 
     if (p.itemMode === 'ninja_dart') {
-        spec.forceNinjaDartOnPop = true;
-        spec.dropConfig = { ninja_dart: { chance: 1 } };
+        const normalCount = Math.max(0, p.balloonCount ?? 0);
+        spec.popItemDrops = defaultNinjaDartPopDrops(normalCount, 3);
     }
 
     return spec;

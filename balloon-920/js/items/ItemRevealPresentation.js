@@ -111,12 +111,11 @@ export class ItemRevealPresentation {
      * @param {object} game
      */
     draw(ctx, game) {
-        void game;
         const accent = this.def?.accentColor ?? '#38bdf8';
         const name = this.def?.name ?? '道具';
 
         if (this.phase === 'anchor_hold') {
-            this._drawAnchorHold(ctx, accent);
+            this._drawAnchorHold(ctx, accent, game);
             return;
         }
 
@@ -153,12 +152,7 @@ export class ItemRevealPresentation {
             ctx.stroke();
         }
 
-        ctx.save();
-        ctx.translate(this.iconX, this.iconY);
-        ctx.rotate(this.spin);
-        ctx.scale(this.iconScale, this.iconScale);
-        ItemRevealPresentation._drawShurikenIcon(ctx, 28, accent, alpha);
-        ctx.restore();
+        this._drawFlyingIcon(ctx, game, this.iconX, this.iconY, 28, accent, alpha);
 
         if (centerGlow > 0.2) {
             ctx.textAlign = 'center';
@@ -171,7 +165,28 @@ export class ItemRevealPresentation {
         ctx.restore();
     }
 
-    _drawAnchorHold(ctx, accent) {
+    _drawFlyingIcon(ctx, game, x, y, size, accent, alpha) {
+        const icon = this.def?.icon;
+        if (icon && icon !== 'shuriken') {
+            const fontSize = Math.max(22, size * this.iconScale * 1.35);
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.globalAlpha = alpha;
+            ctx.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+            ctx.fillText(icon, x, y);
+            ctx.restore();
+            return;
+        }
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(this.spin);
+        ctx.scale(this.iconScale, this.iconScale);
+        ItemRevealPresentation._drawShurikenIcon(ctx, size, accent, alpha);
+        ctx.restore();
+    }
+
+    _drawAnchorHold(ctx, accent, game) {
         const holdT = this.anchorHoldT;
         const pulse = 0.82 + Math.sin(this.pulse * 1.6) * 0.18;
         const vignetteA = 0.18 + holdT * 0.28;
@@ -213,10 +228,7 @@ export class ItemRevealPresentation {
         ctx.arc(this.anchorX, this.anchorY, glowR, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.translate(this.anchorX, this.anchorY);
-        ctx.rotate(this.spin);
-        ctx.scale(this.iconScale, this.iconScale);
-        ItemRevealPresentation._drawShurikenIcon(ctx, 34, accent, 1);
+        this._drawFlyingIcon(ctx, game, this.anchorX, this.anchorY, 34, accent, 1);
         ctx.restore();
     }
 

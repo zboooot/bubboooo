@@ -2,6 +2,8 @@ import * as Config from '../config.js';
 import { TEAM_PALETTE, TUTORIAL_LEVEL_COUNT, TUTORIAL_LEVELS, TEST_LEVELS } from './levelData.js';
 import { clamp, makeSeededRng, rollEphemeralSeed } from '../utils/math.js';
 import { buildTestLabLevelSpec } from './testLabLevel.js';
+import { fieldBalloonSlotMap } from './levelItemPlacement.js';
+import { applyMainlineItemPlan } from './levelMainlineItems.js';
 import { spawnClownBalloon } from '../items/clownBalloon.js';
 import { spawnRainbowBalloon } from '../items/rainbowBalloon.js';
 
@@ -86,8 +88,20 @@ export class LevelService {
     }
 
     getLevelSpec(levelIndex) {
-        if (this.isTutorialLevel(levelIndex)) return TUTORIAL_LEVELS[levelIndex];
-        return this.generateProceduralLevel(levelIndex);
+        if (this.isTutorialLevel(levelIndex)) {
+            const base = TUTORIAL_LEVELS[levelIndex];
+            return {
+                ...base,
+                fieldBalloonSlots: [],
+                popItemDrops: [],
+                tetrisWallCount: 0,
+            };
+        }
+        const level = this.generateProceduralLevel(levelIndex);
+        level.fieldBalloonSlots = [];
+        level.popItemDrops = [];
+        level.tetrisWallCount = 0;
+        return level;
     }
 
     getTestLevelSpec(testId) {
@@ -125,6 +139,7 @@ export class LevelService {
         game.pumpFuelRemaining = level.pump.slice();
         game.resetPumpFuelLabelAnims();
         game.spawnBalloonsWithLayout(layout, level);
+        game.spawnTetrisWallsForLevel(level);
         game.resetOutcomeSound();
         game.updateLevelHud();
     }
@@ -219,6 +234,11 @@ export class LevelService {
             const playW = Config.width - Config.BALLOON_FIELD_PAD_X * 2;
             const playTop = Config.BALLOON_FIELD_PAD_TOP;
             const playBottom = game.floorLimitY() - layout.r;
+            const fieldSlots = fieldBalloonSlotMap(level);
+            const copyMeta = {
+                copyMin: level.clownCopyMin ?? 5,
+                copyMax: level.clownCopyMax ?? 10,
+            };
 
             for (let i = 0; i < layout.count; i++) {
                 const col = i % layout.cols;
@@ -238,22 +258,33 @@ export class LevelService {
                     }
                 }
 
-                const teamId = level.procedural
-                    ? game.pickSpawnTeamFromWeights(level, rng)
-                    : level.activeTeams[i % level.activeTeams.length];
-                const { colorBase, colorLight } = game.pickTeamColor(teamId);
-                const air = game.rollBaselineInitialAir(i);
                 const seedRadius = Config.MIN_BALLOON_RADIUS * radiusScale;
-                game.createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
-                const ball = game.balls[game.balls.length - 1];
-                ball.air = air;
-                game.applyBallAirVisual(ball);
-                const visualR = seedRadius * game.currentInflateScale(ball);
-                game.reshapeBallToCircle(ball, visualR);
-                game.localRelaxBall(ball, 10);
-                game.syncBallRestState(ball);
-                game.schedulePopIfEmpty(ball);
-                ball.labelLastCeil = game.displayAirForLabel(ball);
+                const fieldKind = fieldSlots.get(i);
+                let ball;
+                if (fieldKind === 'clown') {
+                    spawnClownBalloon(game, cx, cy, seedRadius, copyMeta);
+                    ball = game.balls[game.balls.length - 1];
+                } else if (fieldKind === 'rainbow') {
+                    spawnRainbowBalloon(game, cx, cy, seedRadius);
+                    ball = game.balls[game.balls.length - 1];
+                } else {
+                    const teamId = level.procedural
+                        ? game.pickSpawnTeamFromWeights(level, rng)
+                        : level.activeTeams[i % level.activeTeams.length];
+                    const { colorBase, colorLight } = game.pickTeamColor(teamId);
+                    const air = game.rollBaselineInitialAir(i);
+                    game.createSoftBall(cx, cy, seedRadius, colorBase, colorLight);
+                    ball = game.balls[game.balls.length - 1];
+                    ball.air = air;
+                    game.applyBallAirVisual(ball);
+                    const visualR = seedRadius * game.currentInflateScale(ball);
+                    game.reshapeBallToCircle(ball, visualR);
+                    game.localRelaxBall(ball, 10);
+                    game.syncBallRestState(ball);
+                    game.schedulePopIfEmpty(ball);
+                    ball.labelLastCeil = game.displayAirForLabel(ball);
+                }
+                ball.spawnIndex = i;
                 game.onBalloonSpawn(ball, i, level);
             }
 
@@ -289,6 +320,7 @@ export class LevelService {
                 level.balloonCountFactor,
                 level.layoutRadiusScale ?? 1
             );
+            applyMainlineItemPlan(level, game.levelIndex, layout.count);
             if (level.pump && level.pump.length === game.activeTeams.length) {
                 game.pumpFuelRemaining = level.pump.slice();
             } else {
@@ -389,6 +421,9 @@ export class LevelService {
             game.clearTetrisWalls();
             game.clownCinematic = null;
             game.clownBurstSpawn = null;
+            game.pendingClownItemReveals = [];
+            game.pendingClownBurstSnapshots = [];
+            game.pendingClownActivations = [];
     }
 
     estimateMeanBalloonRadius() {
@@ -412,6 +447,7 @@ export class LevelService {
             level.clownCount = 0;
             level.tetrisWallCount = 0;
             level.rainbowCount = 0;
+            level.popItemDrops = level.popItemDrops ?? [];
         }
         if (level.itemMode !== 'rainbow') level.rainbowCount = 0;
         game.levelIndex = 0;
@@ -441,9 +477,13 @@ export class LevelService {
         const rng = game.levelSpawnRng || makeSeededRng(level.seed || 1);
         const normalCount = Math.max(0, level.balloonCount ?? 0);
         const clownCount =
-            level.itemMode === 'clown' ? Math.max(0, level.clownCount ?? 0) : 0;
+            level.itemMode === 'clown' || level.itemMode === 'both'
+                ? Math.max(0, level.clownCount ?? 0)
+                : 0;
         const rainbowCount =
-            level.itemMode === 'rainbow' ? Math.max(0, level.rainbowCount ?? 0) : 0;
+            level.itemMode === 'rainbow'
+                ? Math.max(0, level.rainbowCount ?? 0)
+                : 0;
         const total = Math.max(1, normalCount + clownCount + rainbowCount);
         const layout = game.computeBalloonFillLayout(1, level.layoutRadiusScale ?? 0.95);
         layout.count = total;
@@ -469,6 +509,10 @@ export class LevelService {
             const slot = Math.floor(rng() * total);
             if (!clownSlots.has(slot)) rainbowSlots.add(slot);
         }
+        if (level.testLab) {
+            if (level.itemMode !== 'ninja_dart') level.popItemDrops = [];
+            level.fieldBalloonSlots = [];
+        }
 
         for (let i = 0; i < total; i++) {
             const col = i % cols;
@@ -491,12 +535,14 @@ export class LevelService {
             if (clownSlots.has(i)) {
                 spawnClownBalloon(game, cx, cy, seedRadius, copyMeta);
                 const ball = game.balls[game.balls.length - 1];
+                ball.spawnIndex = i;
                 game.onBalloonSpawn(ball, i, level);
                 continue;
             }
             if (rainbowSlots.has(i)) {
                 spawnRainbowBalloon(game, cx, cy, seedRadius);
                 const ball = game.balls[game.balls.length - 1];
+                ball.spawnIndex = i;
                 game.onBalloonSpawn(ball, i, level);
                 continue;
             }
@@ -514,6 +560,7 @@ export class LevelService {
             game.syncBallRestState(ball);
             game.schedulePopIfEmpty(ball);
             ball.labelLastCeil = game.displayAirForLabel(ball);
+            ball.spawnIndex = i;
             game.onBalloonSpawn(ball, i, level);
         }
 

@@ -235,6 +235,7 @@ export class BalloonGameApp {
             if (!anchorHold && !clownFrozen) {
                 this.updateBallLabelAnims();
                 this.updatePumpFuelLabelAnims();
+                this.updatePumpFuelLabelAnims();
                 this.updateComboHud();
                 this.updateImminentPops();
                 this.processChainPops();

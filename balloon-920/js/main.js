@@ -11,8 +11,12 @@ function resolveLaunchOptions() {
     }
     const level = params.get('level');
     if (level == null) return {};
-    const idx = Number.parseInt(level, 10);
-    return Number.isFinite(idx) && idx >= 0 ? { startLevel: idx } : {};
+    const n = Number.parseInt(level, 10);
+    if (!Number.isFinite(n)) return {};
+    // ?level=2 表示「第 2 关」（1-based）；?level=0 仍兼容为第 1 关
+    if (n >= 1) return { startLevel: n - 1 };
+    if (n === 0) return { startLevel: 0 };
+    return {};
 }
 
 const canvas = document.getElementById('physicsCanvas');

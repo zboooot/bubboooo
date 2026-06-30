@@ -10,14 +10,27 @@ export function isRainbowBall(ball) {
 }
 
 /**
- * 是否与 source 构成连锁（彩虹与任意色相连）
+ * 是否构成同色连锁。彩虹球不视为万能色：仅在与 chainColor 一致时与彩虹配对，
+ * 或由 getTouchingSameColorNeighbors 对非彩虹球排除彩虹邻居。
  * @param {object} a
  * @param {object} b
+ * @param {string|null} [chainColor] 彩虹连爆时继承的色键（clownChainColorKey）
  */
-export function ballsChainTogether(a, b) {
+export function ballsChainTogether(a, b, chainColor = null) {
     if (!a || !b || a === b) return false;
-    if (isRainbowBall(a) || isRainbowBall(b)) return true;
+    if (isRainbowBall(a) && isRainbowBall(b)) return false;
+    if (isRainbowBall(a)) {
+        return chainColor != null && clownChainColorKey(b) === chainColor;
+    }
+    if (isRainbowBall(b)) {
+        return chainColor != null && clownChainColorKey(a) === chainColor;
+    }
     return clownChainColorKey(a) === clownChainColorKey(b);
+}
+
+/** @param {object} ball */
+export function chainColorKeyForPop(ball) {
+    return clownChainColorKey(ball);
 }
 
 /**
@@ -39,9 +52,11 @@ export function enqueueRainbowsNearPop(game, sourceBall) {
     const rainbows = findRainbowsTouching(game, sourceBall);
     if (!rainbows.length) return;
     game.ensureChainVisited();
+    const chainColor = chainColorKeyForPop(sourceBall);
     for (let i = 0; i < rainbows.length; i++) {
         const r = rainbows[i];
         if (!game.balls.includes(r) || game.chainPopVisited.has(r)) continue;
+        r.chainPopColor = chainColor;
         game.chainPopVisited.add(r);
         game.chainPopQueue.push(r);
     }
