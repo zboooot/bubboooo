@@ -53,13 +53,16 @@ export function enqueueRainbowsNearPop(game, sourceBall) {
     if (!rainbows.length) return;
     game.ensureChainVisited();
     const chainColor = chainColorKeyForPop(sourceBall);
+    let activated = 0;
     for (let i = 0; i < rainbows.length; i++) {
         const r = rainbows[i];
         if (!game.balls.includes(r) || game.chainPopVisited.has(r)) continue;
         r.chainPopColor = chainColor;
         game.chainPopVisited.add(r);
         game.chainPopQueue.push(r);
+        activated++;
     }
+    if (activated > 0) game.sfx?.playRainbowActivate?.();
 }
 
 /**

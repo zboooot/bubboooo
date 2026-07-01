@@ -84,6 +84,7 @@ export class BalloonGameApp {
         this.clownBurstSpawn = null;
         this.tetrisWalls = [];
 
+
         // --- 子系统实例 ---
         this.sfxEngine = createSfxSystem(() => this.simTime);
         this.sfx = this.sfxEngine;
@@ -253,7 +254,6 @@ export class BalloonGameApp {
 
             if (!anchorHold && !clownFrozen) {
                 this.updateBallLabelAnims();
-                this.updatePumpFuelLabelAnims();
                 this.updatePumpFuelLabelAnims();
                 this.updateComboHud();
                 this.updateImminentPops();

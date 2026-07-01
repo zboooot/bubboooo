@@ -21,9 +21,33 @@ let bgmGraphReady = false;
 let bgmEl = null;
 let bgmMediaSource = null;
 let bgmAutoplayAttempts = 0;
+/** @type {{ src: AudioBufferSourceNode, gain: GainNode } | null} */
+let dartFlyLoop = null;
+let dartFlightLevel = 0;
 
 const BGM_SRC = 'assets/bgm.mp3';
+const NINJA_SHOUT_SRC = 'assets/ninja_shout.mp3';
+const NINJA_DART_FLY_SRC = 'assets/ninja_dart_fly.mp3';
+let ninjaShoutBuffer = null;
+let ninjaDartFlyBuffer = null;
+let ninjaSfxLoadPromise = null;
+let lastRainbowSfxAt = 0;
+let lastClownLaughAt = 0;
 const BGM_LEVEL = 0.26;
+
+function runWhenCtxReady(fn) {
+    init();
+    if (!ctx) return;
+    const run = () => {
+        try {
+            fn(ctx.currentTime);
+        } catch {
+            /* ignore WebAudio scheduling edge cases */
+        }
+    };
+    if (ctx.state === 'running') run();
+    else ctx.resume().then(run).catch(run);
+}
 
 function init() {
     if (ctx) return;
@@ -81,9 +105,32 @@ function init() {
     pumpBed = { bedGain, bedFilter, bedTone, bedToneGain, bedBus };
 }
 
+function loadNinjaSfx() {
+    if (!ctx) return Promise.resolve();
+    if (ninjaSfxLoadPromise) return ninjaSfxLoadPromise;
+    ninjaSfxLoadPromise = (async () => {
+        const decode = async (url) => {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`sfx fetch ${url}`);
+            return ctx.decodeAudioData(await res.arrayBuffer());
+        };
+        try {
+            [ninjaShoutBuffer, ninjaDartFlyBuffer] = await Promise.all([
+                decode(NINJA_SHOUT_SRC),
+                decode(NINJA_DART_FLY_SRC),
+            ]);
+            ensureDartFlyLoop();
+        } catch {
+            ninjaSfxLoadPromise = null;
+        }
+    })();
+    return ninjaSfxLoadPromise;
+}
+
 function resume() {
     init();
     if (!ctx) return;
+    void loadNinjaSfx();
     const begin = () => {
         startBgm();
         if (!bgmStarted) requestAnimationFrame(() => startBgm());
@@ -472,5 +519,210 @@ function playLose() {
     o.stop(t + 0.7);
 }
 
-    return { resume, autoplayBgm, updatePump, playPop, playDenied, playWin, playLose };
+function ensureDartFlyLoop() {
+    init();
+    if (!ctx || !master || !ninjaDartFlyBuffer || dartFlyLoop) return;
+    const src = ctx.createBufferSource();
+    src.buffer = ninjaDartFlyBuffer;
+    src.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(gain);
+    gain.connect(master);
+    src.start();
+    dartFlyLoop = { src, gain };
+}
+
+/** 小丑激活：捣蛋鬼式笑声（走 master，音量略高于连爆音） */
+function playClownLaugh() {
+    resume();
+    if (!ctx || !master) return;
+    const now = performance.now();
+    if (now - lastClownLaughAt < 550) return;
+    lastClownLaughAt = now;
+
+    runWhenCtxReady((t) => {
+        const bus = master;
+        const hits = [
+            { f: 520, at: 0, dur: 0.11, vol: 0.82 },
+            { f: 760, at: 0.1, dur: 0.1, vol: 0.74 },
+            { f: 430, at: 0.19, dur: 0.12, vol: 0.78 },
+            { f: 880, at: 0.3, dur: 0.14, vol: 0.76 },
+            { f: 610, at: 0.44, dur: 0.11, vol: 0.62 },
+            { f: 940, at: 0.54, dur: 0.1, vol: 0.55 },
+        ];
+        for (const hit of hits) {
+            const o = ctx.createOscillator();
+            o.type = 'square';
+            const at = t + hit.at;
+            const f0 = Math.max(80, hit.f * 0.9);
+            const f1 = Math.max(80, hit.f * 1.12);
+            const f2 = Math.max(80, hit.f * 0.72);
+            o.frequency.setValueAtTime(f0, at);
+            o.frequency.exponentialRampToValueAtTime(f1, at + hit.dur * 0.32);
+            o.frequency.exponentialRampToValueAtTime(f2, at + hit.dur);
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0.001, at);
+            g.gain.linearRampToValueAtTime(hit.vol, at + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, at + hit.dur);
+            const f = ctx.createBiquadFilter();
+            f.type = 'lowpass';
+            f.frequency.value = 2800;
+            o.connect(f);
+            f.connect(g);
+            g.connect(bus);
+            o.start(at);
+            o.stop(at + hit.dur + 0.03);
+        }
+        const snort = ctx.createBufferSource();
+        snort.buffer = makeNoiseBurst(0.08, (u) => Math.sin(Math.PI * u) * (1 - u * 0.4));
+        const sf = ctx.createBiquadFilter();
+        sf.type = 'bandpass';
+        sf.frequency.value = 2200;
+        sf.Q.value = 1.1;
+        const sg = ctx.createGain();
+        sg.gain.setValueAtTime(0.34, t + 0.16);
+        sg.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+        snort.connect(sf);
+        sf.connect(sg);
+        sg.connect(bus);
+        snort.start(t + 0.16);
+        snort.stop(t + 0.28);
+    });
+}
+
+/** 彩虹球被连锁激活：上扬奖励长音 */
+function playRainbowActivate() {
+    resume();
+    if (!ctx || !master) return;
+    const now = performance.now();
+    if (now - lastRainbowSfxAt < 420) return;
+    lastRainbowSfxAt = now;
+
+    runWhenCtxReady((t) => {
+        const bus = master;
+        const dur = 0.95;
+
+        const lead = ctx.createOscillator();
+        lead.type = 'sine';
+        lead.frequency.setValueAtTime(392, t);
+        lead.frequency.exponentialRampToValueAtTime(1174.66, t + dur * 0.72);
+        lead.frequency.setValueAtTime(1174.66, t + dur);
+        const lg = ctx.createGain();
+        lg.gain.setValueAtTime(0.001, t);
+        lg.gain.linearRampToValueAtTime(0.52, t + 0.08);
+        lg.gain.setValueAtTime(0.46, t + dur * 0.55);
+        lg.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        lead.connect(lg);
+        lg.connect(bus);
+        lead.start(t);
+        lead.stop(t + dur + 0.05);
+
+        const harm = ctx.createOscillator();
+        harm.type = 'triangle';
+        const ht0 = t + 0.05;
+        harm.frequency.setValueAtTime(523.25, ht0);
+        harm.frequency.exponentialRampToValueAtTime(1567.98, t + dur * 0.65);
+        const hg = ctx.createGain();
+        hg.gain.setValueAtTime(0.001, ht0);
+        hg.gain.linearRampToValueAtTime(0.28, t + 0.14);
+        hg.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.92);
+        harm.connect(hg);
+        hg.connect(bus);
+        harm.start(ht0);
+        harm.stop(t + dur + 0.05);
+
+        const sparkle = ctx.createOscillator();
+        sparkle.type = 'sine';
+        const st0 = t + 0.18;
+        sparkle.frequency.setValueAtTime(1760, st0);
+        const spg = ctx.createGain();
+        spg.gain.setValueAtTime(0.001, st0);
+        spg.gain.linearRampToValueAtTime(0.2, t + 0.28);
+        spg.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        sparkle.connect(spg);
+        spg.connect(bus);
+        sparkle.start(st0);
+        sparkle.stop(t + dur + 0.05);
+    });
+}
+
+/** 忍者飞镖激活：视频素材喊声（Generated-Video 约 6.0s） */
+function playNinjaShout() {
+    resume();
+    if (!ctx || !master) return;
+    void loadNinjaSfx().then(() => {
+        if (!ninjaShoutBuffer) return;
+        const t = ctx.currentTime;
+        const src = ctx.createBufferSource();
+        src.buffer = ninjaShoutBuffer;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.95, t);
+        src.connect(g);
+        g.connect(master);
+        src.start(t);
+        src.stop(t + ninjaShoutBuffer.duration + 0.02);
+    });
+}
+
+/** 飞镖飞行：视频素材飞行 whoosh 循环（约 6.55–8.85s） */
+function updateDartFlight(active, speedNorm, dt) {
+    void loadNinjaSfx();
+    ensureDartFlyLoop();
+    if (!dartFlyLoop || !ctx) return;
+
+    const norm = Number.isFinite(speedNorm) ? speedNorm : 0;
+    const target = active ? Math.max(0.25, Math.min(1, norm)) : 0;
+    if (active) dartFlightLevel = Math.min(1, dartFlightLevel + dt * 8);
+    else dartFlightLevel = Math.max(0, dartFlightLevel - dt * 6);
+    const level = active ? Math.max(target, dartFlightLevel * 0.9) : dartFlightLevel;
+
+    const t = ctx.currentTime;
+    const rate = 0.9 + level * 0.28;
+    dartFlyLoop.src.playbackRate.setTargetAtTime(rate, t, 0.04);
+    dartFlyLoop.gain.gain.setTargetAtTime(level * 0.78, t, 0.03);
+}
+
+/** 俄罗斯方块墙落地 */
+function playTetrisWallSpawn() {
+    resume();
+    if (!ctx || !master) return;
+    const t = ctx.currentTime;
+    const thud = ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(140, t);
+    thud.frequency.exponentialRampToValueAtTime(62, t + 0.14);
+    const tg = ctx.createGain();
+    tg.gain.setValueAtTime(0.34, t);
+    tg.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    thud.connect(tg);
+    tg.connect(master);
+    thud.start(t);
+    thud.stop(t + 0.17);
+
+    const clack = ctx.createBufferSource();
+    clack.buffer = makeNoiseBurst(0.04, (u) => Math.pow(1 - u, 1.8));
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(0.2, t);
+    cg.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    clack.connect(cg);
+    cg.connect(master);
+    clack.start(t);
+    clack.stop(t + 0.055);
+}
+
+    return {
+        resume,
+        autoplayBgm,
+        updatePump,
+        playPop,
+        playDenied,
+        playWin,
+        playLose,
+        playClownLaugh,
+        playRainbowActivate,
+        playNinjaShout,
+        updateDartFlight,
+        playTetrisWallSpawn,
+    };
 }

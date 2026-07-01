@@ -1,3 +1,4 @@
+import * as Config from '../config.js';
 import { ItemPhase, getItemDef } from './itemTypes.js';
 import { ItemDropTable } from './ItemDropTable.js';
 import { ItemSpawnPlanner } from './ItemSpawnPlanner.js';
@@ -161,14 +162,20 @@ export class ItemService {
 
         const dart = new NinjaDart({ path });
         this.ninjaDarts.push(dart);
+        const sfx = this.game.sfx;
+        if (sfx) {
+            sfx.resume();
+            if (!opts.dartShoutPlayed && sfx.playNinjaShout) sfx.playNinjaShout();
+            if (sfx.updateDartFlight) sfx.updateDartFlight(true, 1, 0);
+        }
         return dart;
     }
 
     updateItems(dt) {
         this._updateItemReveal(dt);
+        this._updateNinjaDarts(dt);
         if (this.isRevealActive) return;
 
-        this._updateNinjaDarts(dt);
         this._updateLoosePickups(dt);
     }
 
@@ -181,6 +188,20 @@ export class ItemService {
         if (wasAnchorHold && this.itemReveal.phase !== 'anchor_hold') {
             this.game.itemRevealAnchorHold = false;
             this.game.itemRevealActive = true;
+            if (this.itemReveal.itemId === 'clown_balloon') {
+                this.itemReveal.pendingOpts.clownLaughPlayed = true;
+                if (this.game.sfx?.playClownLaugh) {
+                    this.game.sfx.resume();
+                    this.game.sfx.playClownLaugh();
+                }
+            }
+            if (this.itemReveal.itemId === 'ninja_dart') {
+                this.itemReveal.pendingOpts.dartShoutPlayed = true;
+                if (this.game.sfx?.playNinjaShout) {
+                    this.game.sfx.resume();
+                    this.game.sfx.playNinjaShout();
+                }
+            }
         }
 
         if (status !== 'complete') return;
@@ -190,9 +211,17 @@ export class ItemService {
         this.game.itemRevealActive = false;
         this.game.itemRevealAnchorHold = false;
         if (pendingOpts.resumeClownCinematic && pendingOpts.clownSnapshot) {
+            if (!pendingOpts.clownLaughPlayed && this.game.sfx?.playClownLaugh) {
+                this.game.sfx.resume();
+                this.game.sfx.playClownLaugh();
+            }
             this.game.resumeClownCinematicAfterReveal?.(pendingOpts.clownSnapshot);
         } else {
             this._executeItemEffect(itemId, pendingOpts);
+            if (itemId === 'ninja_dart' && !pendingOpts.dartShoutPlayed && this.game.sfx?.playNinjaShout) {
+                this.game.sfx.resume();
+                this.game.sfx.playNinjaShout();
+            }
         }
         this._drainPendingClownItemReveals();
     }
@@ -209,13 +238,20 @@ export class ItemService {
     }
 
     _updateNinjaDarts(dt) {
-        if (!this.ninjaDarts.length) return;
         const game = this.game;
+        if (!this.ninjaDarts.length) {
+            game.sfx?.updateDartFlight?.(false, 0, dt);
+            return;
+        }
+        let maxSpeed = 0;
         for (let i = this.ninjaDarts.length - 1; i >= 0; i--) {
             const dart = this.ninjaDarts[i];
             dart.update(dt, game);
+            if (dart.alive) maxSpeed = Math.max(maxSpeed, dart.speed);
             if (!dart.alive) this.ninjaDarts.splice(i, 1);
         }
+        const norm = maxSpeed / Config.NINJA_DART_SPEED;
+        game.sfx?.updateDartFlight?.(this.ninjaDarts.length > 0, norm, dt);
     }
 
     _updateLoosePickups(dt) {

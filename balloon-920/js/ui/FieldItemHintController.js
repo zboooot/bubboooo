@@ -12,17 +12,25 @@ export const PUMP_DOCK_HINT_TEXT = '按住泡泡撑爆他';
 /** 第一关进入时默认说明 */
 export const LEVEL_ONE_BALLOON_HINT_TEXT = '泡泡数字表示还需要多少会爆';
 
-const HOLD_SEC = 2.4;
-const FADE_SEC = 1.1;
-const POP_SEC = 0.24;
-const SETTLE_SEC = 0.38;
+const POP_SEC = 0.16;
+const SETTLE_SEC = 0.14;
+const HOLD_STILL_SEC = 3;
+const FLOAT_FADE_SEC = 1.05;
 const BASE_FONT_PX = 26;
-const PEAK_SCALE = 1.28;
-const START_SCALE = 0.72;
-const FLOAT_PX_PER_SEC = 36;
+const PEAK_SCALE = 1.1;
+const START_SCALE = 0.9;
+const FLOAT_PX_PER_SEC = 40;
 const ANCHOR_Y_RATIO = 0.26;
+
+function hintTotalDuration() {
+    return POP_SEC + SETTLE_SEC + HOLD_STILL_SEC + FLOAT_FADE_SEC;
+}
+
+function hintMoveStartAge() {
+    return POP_SEC + SETTLE_SEC + HOLD_STILL_SEC;
+}
 /** 进入第 1 关后延迟再播提示 */
-const LEVEL_ONE_INTRO_DELAY_SEC = 2;
+const LEVEL_ONE_INTRO_DELAY_SEC = 3;
 
 /** 场地特殊道具 / 气筒区点击说明（居中偏上，无玩法效果） */
 export class FieldItemHintController {
@@ -39,7 +47,7 @@ export class FieldItemHintController {
         this.hint = {
             text,
             age: 0,
-            duration: HOLD_SEC + FADE_SEC,
+            duration: hintTotalDuration(),
         };
     }
 
@@ -88,29 +96,40 @@ export class FieldItemHintController {
     _hintScale(age) {
         if (age <= POP_SEC) {
             const u = age / POP_SEC;
-            const ease = 1 - (1 - u) ** 3;
+            const ease = 1 - (1 - u) ** 2;
             return START_SCALE + (PEAK_SCALE - START_SCALE) * ease;
         }
-        const settleT = Math.min(1, (age - POP_SEC) / SETTLE_SEC);
-        const ease = 1 - (1 - settleT) ** 2;
-        return PEAK_SCALE + (1 - PEAK_SCALE) * ease;
+        if (age <= POP_SEC + SETTLE_SEC) {
+            const settleT = (age - POP_SEC) / SETTLE_SEC;
+            const ease = settleT ** 2;
+            return PEAK_SCALE + (1 - PEAK_SCALE) * ease;
+        }
+        return 1;
     }
 
-    _hintAlpha(age, duration) {
-        const fadeStart = duration - FADE_SEC;
-        if (age < fadeStart) return 1;
-        return Math.max(0, 1 - (age - fadeStart) / FADE_SEC);
+    _hintAlpha(age) {
+        const moveStart = hintMoveStartAge();
+        if (age < moveStart) return 1;
+        const moveAge = age - moveStart;
+        return Math.max(0, 1 - moveAge / FLOAT_FADE_SEC);
+    }
+
+    _hintY(baseY, age) {
+        const moveStart = hintMoveStartAge();
+        if (age < moveStart) return baseY;
+        const moveAge = age - moveStart;
+        return baseY - moveAge * FLOAT_PX_PER_SEC;
     }
 
     drawFieldItemHint(ctx) {
         if (!this.hint) return;
-        const { text, age, duration } = this.hint;
-        const alpha = this._hintAlpha(age, duration);
+        const { text, age } = this.hint;
+        const alpha = this._hintAlpha(age);
         if (alpha <= 0.001) return;
 
         const x = Config.width * 0.5;
         const baseY = Config.height * ANCHOR_Y_RATIO;
-        const y = baseY - age * FLOAT_PX_PER_SEC;
+        const y = this._hintY(baseY, age);
         const scale = this._hintScale(age);
 
         ctx.save();

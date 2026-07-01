@@ -64,7 +64,7 @@ export const ITEM_REGISTRY = {
         id: 'clown_balloon',
         name: '小丑气球',
         defaultSource: ItemSource.EMBEDDED,
-        icon: '🤡',
+        icon: 'clown',
         accentColor: '#c084fc',
     },
     tetris_wall: {

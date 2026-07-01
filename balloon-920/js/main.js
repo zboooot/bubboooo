@@ -22,6 +22,10 @@ function resolveLaunchOptions() {
 const canvas = document.getElementById('physicsCanvas');
 const versionTagEl = document.getElementById('versionTag');
 
+if (!canvas) {
+    throw new Error('缺少 #physicsCanvas，请通过 HTTP 打开 balloon-920/index.html');
+}
+
 canvas.width = LOGICAL_WIDTH;
 canvas.height = LOGICAL_HEIGHT;
 if (versionTagEl) versionTagEl.textContent = `v${APP_VERSION}`;

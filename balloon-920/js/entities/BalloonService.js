@@ -398,25 +398,6 @@ export class BalloonService {
         }
     }
 
-    spawnImminentPopSparks(ball, count = 2) {
-        const game = this.game;
-        const c = game.polygonCentroid(ball.particles);
-        for (let i = 0; i < count; i++) {
-            const a = Math.random() * Math.PI * 2;
-            const sp = 60 + Math.random() * 180;
-            game.popEffects.push({
-                x: c.x,
-                y: c.y,
-                vx: Math.cos(a) * sp,
-                vy: Math.sin(a) * sp,
-                life: 0.22 + Math.random() * 0.2,
-                maxLife: 0.42,
-                color: Math.random() < 0.55 ? '#ff4444' : '#ffaa44',
-                size: 2 + Math.random() * 3,
-            });
-        }
-    }
-
     applyImminentPopShake(ball, delayLeft) {
         const game = this.game;
         const urgency = 1 - delayLeft / Config.FULL_POP_DELAY;
@@ -549,7 +530,9 @@ export class BalloonService {
 
             game.sfx.playPop(game.chainComboCount);
             game.bumpComboHud(game.chainComboCount);
-
+            if (isRainbowBall(ball)) {
+                game.sfx?.playRainbowActivate?.();
+            }
             const neighbors = game.getTouchingSameColorNeighbors(ball);
             game.spawnPopEffect(ball);
             game.onBalloonPop(ball, {

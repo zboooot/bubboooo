@@ -167,14 +167,19 @@ export class ItemRevealPresentation {
 
     _drawFlyingIcon(ctx, game, x, y, size, accent, alpha) {
         const icon = this.def?.icon;
+        if (icon === 'clown' && game.drawClownRevealIconAt) {
+            game.drawClownRevealIconAt(x, y, size * this.iconScale * 0.95, { alpha });
+            return;
+        }
         if (icon && icon !== 'shuriken') {
+            const glyph = icon;
             const fontSize = Math.max(22, size * this.iconScale * 1.35);
             ctx.save();
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.globalAlpha = alpha;
             ctx.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
-            ctx.fillText(icon, x, y);
+            ctx.fillText(glyph, x, y);
             ctx.restore();
             return;
         }

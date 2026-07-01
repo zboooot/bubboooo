@@ -26,12 +26,29 @@ export class Renderer {
         if (this.luckIconImage.complete && this.luckIconImage.naturalWidth) {
             this._bakeJokerCanvas(this.luckIconImage);
         }
+
+        this.clownIconImage = new Image();
+        this.clownIconImage.decoding = 'async';
+        this.clownIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.clownIconImage), { once: true });
+        this.clownIconImage.src = new URL('../../assets/clown.png', import.meta.url).href;
+        if (this.clownIconImage.complete && this.clownIconImage.naturalWidth) {
+            this._bakeJokerCanvas(this.clownIconImage);
+        }
+
+        this.clownRevealIconImage = new Image();
+        this.clownRevealIconImage.decoding = 'async';
+        this.clownRevealIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.clownRevealIconImage), { once: true });
+        this.clownRevealIconImage.src = new URL('../../assets/clown_reveal.png', import.meta.url).href;
+        if (this.clownRevealIconImage.complete && this.clownRevealIconImage.naturalWidth) {
+            this._bakeJokerCanvas(this.clownRevealIconImage);
+        }
     }
 
     _bakeJokerCanvas(img) {
         const w = img.naturalWidth;
         const h = img.naturalHeight;
         if (!w || !h) return;
+        try {
         const bake = document.createElement('canvas');
         bake.width = w;
         bake.height = h;
@@ -49,6 +66,9 @@ export class Renderer {
         }
         bctx.putImageData(data, 0, 0);
         img.jokerCanvas = bake;
+        } catch {
+            /* 贴图烘焙失败时仍用原图绘制 */
+        }
     }
 
     _jokerDrawable(img) {
@@ -124,6 +144,57 @@ export class Renderer {
         return { x, y, w: iw, h: ih };
     }
 
+    drawClownIconAt(cx, cy, ballRadius, opts = {}) {
+        const ctx = this.game.dom.ctx;
+        const img = this.clownIconImage;
+        if (!this._jokerReady(img)) {
+            this.drawClownEmojiAt(cx, cy, ballRadius);
+            return null;
+        }
+        const source = this._jokerDrawable(img);
+        const sw = source.width || source.naturalWidth;
+        const sh = source.height || source.naturalHeight;
+        const targetH = ballRadius * 1.664;
+        const scale = targetH / sh;
+        const iw = sw * scale;
+        const ih = sh * scale;
+        const x = cx - iw * 0.5;
+        const y = cy - ih * 0.5;
+        ctx.save();
+        if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
+        ctx.restore();
+        return { x, y, w: iw, h: ih };
+    }
+
+    /** 道具小丑激活揭晓专用（与场上 clown.png 分离） */
+    drawClownRevealIconAt(cx, cy, ballRadius, opts = {}) {
+        const ctx = this.game.dom.ctx;
+        const img = this.clownRevealIconImage;
+        if (!this._jokerReady(img)) {
+            this.drawClownEmojiAt(cx, cy, ballRadius);
+            return null;
+        }
+        const source = this._jokerDrawable(img);
+        const sw = source.width || source.naturalWidth;
+        const sh = source.height || source.naturalHeight;
+        const targetH = ballRadius * 1.75;
+        const scale = targetH / sh;
+        const iw = sw * scale;
+        const ih = sh * scale;
+        const x = cx - iw * 0.5;
+        const y = cy - ih * 0.5;
+        ctx.save();
+        if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
+        ctx.restore();
+        return { x, y, w: iw, h: ih };
+    }
+
     drawClownEmojiAt(cx, cy, ballRadius) {
         const ctx = this.game.dom.ctx;
         const fontSize = Math.max(20, ballRadius * 1.28);
@@ -136,15 +207,15 @@ export class Renderer {
     }
 
     drawClownFace(ball, cx, cy) {
-        this.drawClownEmojiAt(cx, cy, ball.radius);
+        this.drawClownIconAt(cx, cy, ball.radius);
     }
 
     drawEmbeddedItemIcon(ball, cx, cy) {
         const embedded = ball.embeddedItem;
         if (!embedded?.itemId) return;
         const icon = embedded.def?.icon;
-        if (icon === '🤡') {
-            this.drawClownEmojiAt(cx, cy, ball.radius * 0.72);
+        if (icon === 'clown' || icon === '🤡') {
+            this.drawClownIconAt(cx, cy, ball.radius * 0.72);
         }
     }
 
@@ -306,7 +377,7 @@ export class Renderer {
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        game.drawClownEmojiAt(cx, cy, radius);
+        game.drawClownIconAt(cx, cy, radius);
         ctx.restore();
     }
 
