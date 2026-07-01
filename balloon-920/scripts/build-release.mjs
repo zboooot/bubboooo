@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * 打包单文件 HTML → releases/vX.Y/index.html
- * - 内联 esbuild  bundle（无测试侧边栏）
- * - 资源路径指向 ../../assets/（与历史 releases 一致）
+ * 打包单文件 HTML → releases/vX.Y/
+ * - index.html：内联 esbuild bundle（无测试侧边栏）
+ * - assets/：复制运行时依赖资源（与 index.html 同目录，可单独部署本文件夹）
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -11,14 +11,44 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
+
+/** 与 Renderer / SfxSystem 引用保持一致；缺任一文件则构建失败 */
+const RELEASE_ASSETS = [
+    'bgm.mp3',
+    'clown.png',
+    'clown_reveal.png',
+    'luck.png',
+    'ninja_dart_fly.mp3',
+    'ninja_shout.mp3',
+];
+
 const configText = fs.readFileSync(path.join(root, 'js/config.js'), 'utf8');
 const versionMatch = configText.match(/export const APP_VERSION = '([^']+)'/);
 const version = versionMatch?.[1] ?? '0.0';
 const outDir = path.join(root, 'releases', `v${version}`);
 const outHtml = path.join(outDir, 'index.html');
+const outAssetsDir = path.join(outDir, 'assets');
 const bundleTmp = path.join(outDir, '.bundle.tmp.js');
+const assetsSrcDir = path.join(root, 'assets');
 
 fs.mkdirSync(outDir, { recursive: true });
+fs.mkdirSync(outAssetsDir, { recursive: true });
+
+const missing = [];
+for (const file of RELEASE_ASSETS) {
+    const src = path.join(assetsSrcDir, file);
+    const dest = path.join(outAssetsDir, file);
+    if (!fs.existsSync(src)) {
+        missing.push(file);
+        continue;
+    }
+    fs.copyFileSync(src, dest);
+}
+if (missing.length) {
+    console.error('Missing source assets:', missing.join(', '));
+    console.error(`Expected under ${assetsSrcDir}`);
+    process.exit(1);
+}
 
 execFileSync(
     'npx',
@@ -37,10 +67,12 @@ execFileSync(
 let js = fs.readFileSync(bundleTmp, 'utf8');
 fs.unlinkSync(bundleTmp);
 
-js = js.replace(/ASSET_ROOT = "assets\/"/g, 'ASSET_ROOT = "../../assets/"');
-js = js.replace(/assets\/bgm\.mp3/g, '../../assets/bgm.mp3');
-js = js.replace(/assets\/ninja_shout\.mp3/g, '../../assets/ninja_shout.mp3');
-js = js.replace(/assets\/ninja_dart_fly\.mp3/g, '../../assets/ninja_dart_fly.mp3');
+/** 发布页与 assets/ 同目录 */
+js = js.replace(/ASSET_ROOT = "assets\/"/g, 'ASSET_ROOT = "assets/"');
+js = js.replace(/ASSET_ROOT = "\.\.\/\.\.\/assets\/"/g, 'ASSET_ROOT = "assets/"');
+for (const file of RELEASE_ASSETS) {
+    js = js.replaceAll(`../../assets/${file}`, `assets/${file}`);
+}
 
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
@@ -84,4 +116,10 @@ html = html.replace(
 );
 
 fs.writeFileSync(outHtml, html, 'utf8');
+
 console.log(`Wrote ${outHtml} (${(fs.statSync(outHtml).size / 1024).toFixed(1)} KB)`);
+console.log(`Copied ${RELEASE_ASSETS.length} assets → ${outAssetsDir}`);
+for (const file of RELEASE_ASSETS) {
+    const dest = path.join(outAssetsDir, file);
+    console.log(`  · ${file} (${(fs.statSync(dest).size / 1024).toFixed(1)} KB)`);
+}
