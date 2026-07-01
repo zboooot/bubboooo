@@ -2,7 +2,7 @@ import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
 import { isRainbowBall } from '../items/rainbowBalloon.js';
 
-/** 小丑道具唯一贴图：assets/clown.png */
+/** 小丑道具唯一贴图：镂空五官（透明底），叠在气球渐变色上 */
 const CLOWN_ICON_FILE = 'clown.png';
 /** 低于此 alpha 的像素视为全透明，避免缩放后出现方形描边 */
 const ICON_ALPHA_CUT = 14;

@@ -14,6 +14,25 @@ export const MAINLINE_LEVEL_4_8_DART_PROB = 0.5;
 /** 主线第 4–8 关：相对程序生成基准的场上球数系数（0.8 = 少 20%） */
 export const MAINLINE_LEVEL_4_8_BALLOON_COUNT_MUL = 0.8;
 
+/**
+ * 第 4 关程序关（tier=1）的场上密度，供 5–8 关对齐第 4 关（第 1–3 教学关不改）。
+ * @returns {{ balloonCountFactor: number, layoutRadiusScale: number }}
+ */
+export function mainlineLevel4BalloonDensityAnchor() {
+    const tier = 1;
+    const wave = Math.sin(tier * 0.85);
+    const breathLevel = wave < -0.35;
+    let base = 1.18 + tier * 0.055 + wave * 0.11;
+    base = Math.max(1.12, Math.min(2.35, base));
+    let balloonCountFactor = breathLevel ? base * 0.94 : base;
+    balloonCountFactor *= MAINLINE_LEVEL_4_8_BALLOON_COUNT_MUL;
+    const layoutRadiusScale = Math.max(
+        0.55,
+        Math.min(1, 1 - tier * 0.026 - Math.max(0, wave) * 0.04),
+    );
+    return { balloonCountFactor, layoutRadiusScale };
+}
+
 const ITEM_TYPES_WITHOUT_DART = ALL_ITEM_TYPES.filter((t) => t !== 'ninja_dart');
 
 export function mergeMainlineItemFields(target, fields) {

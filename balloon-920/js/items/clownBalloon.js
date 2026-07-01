@@ -6,7 +6,7 @@ export { isClownBall, findClownsTouching, enqueueClownsNearPop } from './clownSh
 export const CLOWN_BALLOON_SIZE_MUL = 1.5;
 
 /**
- * 在场地生成小丑气球（不可打气，白灰球体 + clown.png 贴标）
+ * 在场地生成小丑气球（不可打气，白灰球体 + 🤡 贴标）
  * @param {import('../BalloonGameApp.js').BalloonGameApp} game
  */
 export function spawnClownBalloon(game, cx, cy, radius, meta = {}) {

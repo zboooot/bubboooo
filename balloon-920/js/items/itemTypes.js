@@ -60,7 +60,6 @@ export const ITEM_REGISTRY = {
             game.spawnNinjaDart(ctx ?? {});
         },
     },
-    /** 唯一小丑道具：嵌在球内（embedded）或主线场上小丑球（field slot kind: clown） */
     clown_balloon: {
         id: 'clown_balloon',
         name: '小丑气球',

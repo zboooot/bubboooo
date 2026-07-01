@@ -6,6 +6,7 @@ import { fieldBalloonSlotMap } from './levelItemPlacement.js';
 import {
     applyMainlineItemPlan,
     MAINLINE_LEVEL_4_8_BALLOON_COUNT_MUL,
+    mainlineLevel4BalloonDensityAnchor,
 } from './levelMainlineItems.js';
 import { spawnClownBalloon } from '../items/clownBalloon.js';
 import { spawnRainbowBalloon } from '../items/rainbowBalloon.js';
@@ -41,7 +42,7 @@ export class LevelService {
             1.12,
             2.35
         );
-        const layoutRadiusScale = clamp(1 - tier * 0.026 - Math.max(0, wave) * 0.04, 0.55, 1);
+        let layoutRadiusScale = clamp(1 - tier * 0.026 - Math.max(0, wave) * 0.04, 0.55, 1);
         const scatter = clamp(0.1 + tier * 0.032 + (wave2 > 0 ? 0.1 : 0.02), 0, 0.52);
         const pumpSlack = clamp(0.1 + wave * 0.07, 0.04, 0.22);
 
@@ -79,6 +80,12 @@ export class LevelService {
         let countFactor = breathLevel ? balloonCountFactor * 0.94 : balloonCountFactor;
         if (levelNum >= 4 && levelNum <= 8) {
             countFactor *= MAINLINE_LEVEL_4_8_BALLOON_COUNT_MUL;
+        }
+        /** 仅 5–8 关：密度锚定第 4 关程序关。第 1–3 关走 TUTORIAL_LEVELS，不经过此处。 */
+        if (levelNum >= 5 && levelNum <= 8) {
+            const anchor = mainlineLevel4BalloonDensityAnchor();
+            countFactor = anchor.balloonCountFactor;
+            layoutRadiusScale = anchor.layoutRadiusScale;
         }
 
         return {
