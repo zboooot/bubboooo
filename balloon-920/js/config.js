@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.24';
+export const APP_VERSION = '1.25';
 export const APP_VERSION_DATE = '2026-07-01';
 
 export const LOGICAL_WIDTH = 360;

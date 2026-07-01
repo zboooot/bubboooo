@@ -2,9 +2,10 @@ import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
 import { isRainbowBall } from '../items/rainbowBalloon.js';
 
-const JOKER_ASSETS = ['joker.png', 'joker2.png'];
+/** 小丑道具唯一贴图：assets/clown.png */
+const CLOWN_ICON_FILE = 'clown.png';
 /** 低于此 alpha 的像素视为全透明，避免缩放后出现方形描边 */
-const JOKER_ALPHA_CUT = 14;
+const ICON_ALPHA_CUT = 14;
 
 /** 彩虹球面纹理相位量化（越小越省 CPU，环向滚动仍连续） */
 const RAINBOW_OVERLAY_PHASE_BUCKETS = 8;
@@ -91,37 +92,20 @@ function traceBalloonPath(ctx, pts, originX = 0, originY = 0) {
 export class Renderer {
     constructor(game) {
         this.game = game;
-        this.jokerFaceImages = JOKER_ASSETS.map((file) => {
-            const img = new Image();
-            img.decoding = 'async';
-            img.addEventListener('load', () => this._bakeJokerCanvas(img), { once: true });
-            img.src = `${Config.ASSET_ROOT}${file}`;
-            if (img.complete && img.naturalWidth) this._bakeJokerCanvas(img);
-            return img;
-        });
-
         this.luckIconImage = new Image();
         this.luckIconImage.decoding = 'async';
-        this.luckIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.luckIconImage), { once: true });
+        this.luckIconImage.addEventListener('load', () => this._bakeIconCanvas(this.luckIconImage), { once: true });
         this.luckIconImage.src = `${Config.ASSET_ROOT}luck.png`;
         if (this.luckIconImage.complete && this.luckIconImage.naturalWidth) {
-            this._bakeJokerCanvas(this.luckIconImage);
+            this._bakeIconCanvas(this.luckIconImage);
         }
 
         this.clownIconImage = new Image();
         this.clownIconImage.decoding = 'async';
-        this.clownIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.clownIconImage), { once: true });
-        this.clownIconImage.src = `${Config.ASSET_ROOT}clown.png`;
+        this.clownIconImage.addEventListener('load', () => this._bakeIconCanvas(this.clownIconImage), { once: true });
+        this.clownIconImage.src = `${Config.ASSET_ROOT}${CLOWN_ICON_FILE}`;
         if (this.clownIconImage.complete && this.clownIconImage.naturalWidth) {
-            this._bakeJokerCanvas(this.clownIconImage);
-        }
-
-        this.clownRevealIconImage = new Image();
-        this.clownRevealIconImage.decoding = 'async';
-        this.clownRevealIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.clownRevealIconImage), { once: true });
-        this.clownRevealIconImage.src = `${Config.ASSET_ROOT}clown_reveal.png`;
-        if (this.clownRevealIconImage.complete && this.clownRevealIconImage.naturalWidth) {
-            this._bakeJokerCanvas(this.clownRevealIconImage);
+            this._bakeIconCanvas(this.clownIconImage);
         }
 
         /** @type {Map<string, CanvasGradient>} */
@@ -134,7 +118,7 @@ export class Renderer {
         this._rainbowOverlayPoolOrder = [];
     }
 
-    _bakeJokerCanvas(img) {
+    _bakeIconCanvas(img) {
         const w = img.naturalWidth;
         const h = img.naturalHeight;
         if (!w || !h) return;
@@ -147,7 +131,7 @@ export class Renderer {
         const data = bctx.getImageData(0, 0, w, h);
         const px = data.data;
         for (let i = 0; i < px.length; i += 4) {
-            if (px[i + 3] <= JOKER_ALPHA_CUT) {
+            if (px[i + 3] <= ICON_ALPHA_CUT) {
                 px[i] = 0;
                 px[i + 1] = 0;
                 px[i + 2] = 0;
@@ -155,96 +139,32 @@ export class Renderer {
             }
         }
         bctx.putImageData(data, 0, 0);
-        img.jokerCanvas = bake;
+        img.iconCanvas = bake;
         } catch {
             /* 贴图烘焙失败时仍用原图绘制 */
         }
     }
 
-    _jokerDrawable(img) {
-        return img?.jokerCanvas || img;
+    _iconDrawable(img) {
+        return img?.iconCanvas || img;
     }
 
-    _jokerReady(img) {
+    _iconReady(img) {
         if (!img) return false;
-        if (img.jokerCanvas) return true;
+        if (img.iconCanvas) return true;
         return img.complete && img.naturalWidth > 0;
     }
 
-    /** @returns {HTMLImageElement | null} */
-    pickJokerImage(opts = {}) {
-        const imgs = this.jokerFaceImages.filter((im) => this._jokerReady(im));
-        if (!imgs.length) return null;
-        const flash = opts.flashAlternate === true;
-        if (!flash || imgs.length === 1) return imgs[0];
-        const flashHz = opts.flashHz ?? 2;
-        const frame = Math.floor(this.game.simTime * flashHz) % imgs.length;
-        return imgs[frame];
-    }
-
-    drawJokerIconAt(cx, cy, ballRadius, opts = {}) {
-        const ctx = this.game.dom.ctx;
-        const img = this.pickJokerImage(opts);
-        if (!img) return null;
-
-        const source = this._jokerDrawable(img);
-        const sw = source.width || source.naturalWidth;
-        const sh = source.height || source.naturalHeight;
-        const burn = opts.burn ?? 0;
-        const purpleGlow = opts.purpleGlow ?? 0;
-        const targetH = ballRadius * 1.664;
-        const scale = targetH / sh;
-        const iw = sw * scale;
-        const ih = sh * scale;
-        const x = cx - iw * 0.5;
-        const y = cy - ih * 0.5;
-
-        ctx.save();
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-
-        const needsFx = purpleGlow > 0 || burn > 0.02;
-        if (!needsFx) {
-            ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
-        } else {
-            const pulse = 0.55 + 0.45 * Math.sin(this.game.simTime * 8);
-            const layer = document.createElement('canvas');
-            layer.width = Math.max(1, Math.ceil(iw));
-            layer.height = Math.max(1, Math.ceil(ih));
-            const lctx = layer.getContext('2d');
-            lctx.drawImage(source, 0, 0, sw, sh, 0, 0, layer.width, layer.height);
-            if (purpleGlow > 0) {
-                lctx.globalCompositeOperation = 'source-atop';
-                lctx.fillStyle = `rgba(168, 85, 247, ${(0.12 + 0.38 * purpleGlow) * pulse})`;
-                lctx.fillRect(0, 0, layer.width, layer.height);
-            }
-            if (burn > 0.02) {
-                lctx.globalCompositeOperation = 'source-atop';
-                const g = lctx.createLinearGradient(0, 0, layer.width, layer.height);
-                g.addColorStop(0, `rgba(255, 160, 60, ${burn * 0.45})`);
-                g.addColorStop(0.45, `rgba(70, 32, 20, ${burn * 0.82})`);
-                g.addColorStop(1, `rgba(8, 6, 6, ${burn * 0.95})`);
-                lctx.fillStyle = g;
-                lctx.fillRect(0, 0, layer.width, layer.height);
-            }
-            ctx.drawImage(layer, x, y);
-        }
-
-        ctx.restore();
-        return { x, y, w: iw, h: ih };
-    }
-
+    /** 小丑道具统一图标：场上球、嵌套道具、揭晓飞入 */
     drawClownIconAt(cx, cy, ballRadius, opts = {}) {
         const ctx = this.game.dom.ctx;
         const img = this.clownIconImage;
-        if (!this._jokerReady(img)) {
-            this.drawClownEmojiAt(cx, cy, ballRadius);
-            return null;
-        }
-        const source = this._jokerDrawable(img);
+        if (!this._iconReady(img)) return null;
+        const source = this._iconDrawable(img);
         const sw = source.width || source.naturalWidth;
         const sh = source.height || source.naturalHeight;
-        const targetH = ballRadius * 1.664;
+        const sizeMul = opts.sizeMul ?? 1.664;
+        const targetH = ballRadius * sizeMul;
         const scale = targetH / sh;
         const iw = sw * scale;
         const ih = sh * scale;
@@ -257,43 +177,6 @@ export class Renderer {
         ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
         ctx.restore();
         return { x, y, w: iw, h: ih };
-    }
-
-    /** 道具小丑激活揭晓专用（与场上 clown.png 分离） */
-    drawClownRevealIconAt(cx, cy, ballRadius, opts = {}) {
-        const ctx = this.game.dom.ctx;
-        const img = this.clownRevealIconImage;
-        if (!this._jokerReady(img)) {
-            this.drawClownEmojiAt(cx, cy, ballRadius);
-            return null;
-        }
-        const source = this._jokerDrawable(img);
-        const sw = source.width || source.naturalWidth;
-        const sh = source.height || source.naturalHeight;
-        const targetH = ballRadius * 1.75;
-        const scale = targetH / sh;
-        const iw = sw * scale;
-        const ih = sh * scale;
-        const x = cx - iw * 0.5;
-        const y = cy - ih * 0.5;
-        ctx.save();
-        if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
-        ctx.restore();
-        return { x, y, w: iw, h: ih };
-    }
-
-    drawClownEmojiAt(cx, cy, ballRadius) {
-        const ctx = this.game.dom.ctx;
-        const fontSize = Math.max(20, ballRadius * 1.28);
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
-        ctx.fillText('🤡', cx, cy);
-        ctx.restore();
     }
 
     drawClownFace(ball, cx, cy) {
@@ -304,7 +187,7 @@ export class Renderer {
         const embedded = ball.embeddedItem;
         if (!embedded?.itemId) return;
         const icon = embedded.def?.icon;
-        if (icon === 'clown' || icon === '🤡') {
+        if (icon === 'clown') {
             this.drawClownIconAt(cx, cy, ball.radius * 0.72);
         }
     }
@@ -505,7 +388,7 @@ export class Renderer {
         const img = this.luckIconImage;
         if (!img?.complete || !img.naturalWidth) return;
 
-        const source = this._jokerDrawable(img);
+        const source = this._iconDrawable(img);
         const sw = source.width || source.naturalWidth;
         const sh = source.height || source.naturalHeight;
         const targetH = ball.radius * 0.92;

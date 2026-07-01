@@ -167,8 +167,8 @@ export class ItemRevealPresentation {
 
     _drawFlyingIcon(ctx, game, x, y, size, accent, alpha) {
         const icon = this.def?.icon;
-        if (icon === 'clown' && game.drawClownRevealIconAt) {
-            game.drawClownRevealIconAt(x, y, size * this.iconScale * 0.95, { alpha });
+        if (icon === 'clown' && game.drawClownIconAt) {
+            game.drawClownIconAt(x, y, size * this.iconScale * 0.95, { alpha, sizeMul: 1.75 });
             return;
         }
         if (icon && icon !== 'shuriken') {
