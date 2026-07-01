@@ -35,6 +35,12 @@ export function mainlineLevel4BalloonDensityAnchor() {
 
 const ITEM_TYPES_WITHOUT_DART = ALL_ITEM_TYPES.filter((t) => t !== 'ninja_dart');
 
+/** 主线 5–8 关随机道具池（不含飞镖、不含俄罗斯方块墙） */
+const MAINLINE_LEVEL_5_8_ITEM_TYPES = /** @type {MainlineItemType[]} */ ([
+    'rainbow',
+    'clown',
+]);
+
 export function mergeMainlineItemFields(target, fields) {
     target.fieldBalloonSlots = fields.fieldBalloonSlots ?? [];
     target.popItemDrops = fields.popItemDrops ?? [];
@@ -69,7 +75,7 @@ export function buildMainlineItemFields(levelIndex, slotCount, rng) {
 
     if (levelNum >= 5 && levelNum <= 8) {
         const typeCount = rng() < 0.42 ? 1 : 2;
-        const types = pickDistinctTypes(ITEM_TYPES_WITHOUT_DART, typeCount, rng);
+        const types = pickDistinctTypes(MAINLINE_LEVEL_5_8_ITEM_TYPES, typeCount, rng);
         applyItemTypes(out, types, n, used, rng);
         tryAddOneNinjaDartDrop(out, n, used, rng);
         return out;
