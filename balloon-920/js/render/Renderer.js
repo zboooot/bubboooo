@@ -2,8 +2,10 @@ import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
 import { isRainbowBall } from '../items/rainbowBalloon.js';
 
-/** 小丑道具唯一贴图：镂空五官（透明底），叠在气球渐变色上 */
+/** 场上 / 球内：镂空五官（透明底），叠在气球渐变色上 */
 const CLOWN_ICON_FILE = 'clown.png';
+/** 道具激活揭晓：暗屏飞入的完整圆脸（与 clown.png 分离） */
+const CLOWN_REVEAL_ICON_FILE = 'clown_reveal.png';
 /** 低于此 alpha 的像素视为全透明，避免缩放后出现方形描边 */
 const ICON_ALPHA_CUT = 14;
 
@@ -108,6 +110,14 @@ export class Renderer {
             this._bakeIconCanvas(this.clownIconImage);
         }
 
+        this.clownRevealIconImage = new Image();
+        this.clownRevealIconImage.decoding = 'async';
+        this.clownRevealIconImage.addEventListener('load', () => this._bakeIconCanvas(this.clownRevealIconImage), { once: true });
+        this.clownRevealIconImage.src = `${Config.ASSET_ROOT}${CLOWN_REVEAL_ICON_FILE}`;
+        if (this.clownRevealIconImage.complete && this.clownRevealIconImage.naturalWidth) {
+            this._bakeIconCanvas(this.clownRevealIconImage);
+        }
+
         /** @type {Map<string, CanvasGradient>} */
         this._ballGradientCache = new Map();
         /** @type {Map<string, CanvasGradient>} */
@@ -155,7 +165,7 @@ export class Renderer {
         return img.complete && img.naturalWidth > 0;
     }
 
-    /** 小丑道具统一图标：场上球、嵌套道具、揭晓飞入 */
+    /** 场上小丑球、嵌在彩球内的小丑标 */
     drawClownIconAt(cx, cy, ballRadius, opts = {}) {
         const ctx = this.game.dom.ctx;
         const img = this.clownIconImage;
@@ -164,6 +174,30 @@ export class Renderer {
         const sw = source.width || source.naturalWidth;
         const sh = source.height || source.naturalHeight;
         const sizeMul = opts.sizeMul ?? 1.664;
+        const targetH = ballRadius * sizeMul;
+        const scale = targetH / sh;
+        const iw = sw * scale;
+        const ih = sh * scale;
+        const x = cx - iw * 0.5;
+        const y = cy - ih * 0.5;
+        ctx.save();
+        if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(source, 0, 0, sw, sh, x, y, iw, ih);
+        ctx.restore();
+        return { x, y, w: iw, h: ih };
+    }
+
+    /** 小丑道具激活揭晓：暗屏中央飞入图标 */
+    drawClownRevealIconAt(cx, cy, ballRadius, opts = {}) {
+        const ctx = this.game.dom.ctx;
+        const img = this.clownRevealIconImage;
+        if (!this._iconReady(img)) return null;
+        const source = this._iconDrawable(img);
+        const sw = source.width || source.naturalWidth;
+        const sh = source.height || source.naturalHeight;
+        const sizeMul = opts.sizeMul ?? 1.75;
         const targetH = ballRadius * sizeMul;
         const scale = targetH / sh;
         const iw = sw * scale;

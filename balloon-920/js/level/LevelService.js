@@ -110,9 +110,9 @@ export class LevelService {
             const base = TUTORIAL_LEVELS[levelIndex];
             return {
                 ...base,
-                fieldBalloonSlots: [],
-                popItemDrops: [],
-                tetrisWallCount: 0,
+                fieldBalloonSlots: base.fieldBalloonSlots ?? [],
+                popItemDrops: base.popItemDrops ?? [],
+                tetrisWallCount: base.tetrisWallCount ?? 0,
             };
         }
         const level = this.generateProceduralLevel(levelIndex);
@@ -244,6 +244,23 @@ export class LevelService {
             };
     }
 
+    /** 教学关：level.balloonCount 固定格位，或 level.balloonCountReduce 在布局结果上减量 */
+    _applyBalloonCountAdjustments(layout, level) {
+        const game = this.game;
+        let count = layout.count;
+        if (typeof level?.balloonCount === 'number' && level.balloonCount >= 1) {
+            count = Math.floor(level.balloonCount);
+        } else if (typeof level?.balloonCountReduce === 'number' && level.balloonCountReduce > 0) {
+            count = Math.max(1, count - Math.floor(level.balloonCountReduce));
+        } else {
+            return;
+        }
+        layout.count = count;
+        layout.rows = Math.max(1, Math.ceil(layout.count / layout.cols));
+        const spanY = layout.rows > 1 ? (layout.rows - 1) * layout.pitchY : 0;
+        layout.originY = game.floorLimitY() - layout.r - spanY;
+    }
+
     spawnBalloonsWithLayout(layout, level) {
         const game = this.game;
             const rng = game.levelSpawnRng || makeSeededRng(level.seed || 1);
@@ -338,6 +355,7 @@ export class LevelService {
                 level.balloonCountFactor,
                 level.layoutRadiusScale ?? 1
             );
+            this._applyBalloonCountAdjustments(layout, level);
             applyMainlineItemPlan(level, game.levelIndex, layout.count);
             if (level.pump && level.pump.length === game.activeTeams.length) {
                 game.pumpFuelRemaining = level.pump.slice();

@@ -15,7 +15,7 @@ export const TEAM_PALETTE = [
  * - embeddedItems: [{ spawnIndex, itemId, meta? }]
  *
  * 主线投放（levelMainlineItems.js）：
- * 1–2 关无道具；3 关 1 次随机飞镖；4 关固定彩虹 + 概率 1 飞镖；
+ * 第 2 关教学：在默认密度上少 10 球 + 1 场上小丑；3 关 1 次随机飞镖；4 关固定彩虹 + 概率 1 飞镖；
  * 1–3 关固定教学表（TUTORIAL_LEVELS），不参与程序关密度调整；
  * 5–8 关随机 1–2 种道具（不含飞镖）+ 概率 1 飞镖；4–8 关气筒燃料 ×2；4 关起 ×0.8 减球，5–8 关密度锚定第 4 关；
  * 9–14 关随机 1–2 种道具；15 关起墙/小丑加权 + 低概率飞镖/彩虹。
@@ -56,8 +56,11 @@ export const TUTORIAL_LEVELS = [
         id: 2,
         title: '三色加厚',
         balloonCountFactor: 1.12,
+        /** 在 computeBalloonFillLayout 结果上再减去的球数 */
+        balloonCountReduce: 10,
         activeTeams: [0, 1, 2],
         pump: [80, 80, 76],
+        fieldBalloonSlots: [{ spawnIndex: 4, kind: 'clown' }],
     },
     {
         id: 3,

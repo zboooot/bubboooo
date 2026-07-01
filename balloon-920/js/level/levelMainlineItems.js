@@ -113,12 +113,15 @@ export function mainlineItemSeed(levelIndex, slotCount) {
 export function applyMainlineItemPlan(level, levelIndex, slotCount) {
     if (level.testLevel || level.testLab) return;
     const levelNum = levelIndex + 1;
-    if (levelNum <= 2) {
+    if (levelNum === 1) {
         mergeMainlineItemFields(level, {
             fieldBalloonSlots: [],
             popItemDrops: [],
             tetrisWallCount: 0,
         });
+        return;
+    }
+    if (levelNum === 2) {
         return;
     }
     const rng = makeSeededRng(mainlineItemSeed(levelIndex, slotCount));
