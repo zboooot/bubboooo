@@ -1,11 +1,11 @@
-export const APP_VERSION = '1.30';
+export const APP_VERSION = '1.31';
 export const APP_VERSION_DATE = '2026-07-01';
 
 export const LOGICAL_WIDTH = 360;
 export const LOGICAL_HEIGHT = 800;
 
 export const SAVE_KEY = 'balloon920_progress_v1';
-/** 相对当前页面目录；发布包构建会复制到 releases/vX.Y/assets/ */
+/** 相对当前页面目录；发布包构建会将资源内嵌为 data URL（单文件 HTML） */
 export const ASSET_ROOT = 'assets/';
 
 export const width = LOGICAL_WIDTH;
