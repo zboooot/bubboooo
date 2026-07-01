@@ -335,6 +335,7 @@ export class LevelService {
             game.resetOutcomeSound();
             game.updateLevelHud();
             if (!duringTransition && game.appScreen === 'game') game.saveProgress();
+            if (!duringTransition) game.showLevelOneIntroHintIfNeeded();
     }
 
     scheduleLoadLevel(idx) {
@@ -378,6 +379,7 @@ export class LevelService {
                 game.transitionFade = 0;
                 game.levelTransitionDidLoad = false;
                 game.gameOutcome = 'playing';
+                game.showLevelOneIntroHintIfNeeded();
             }
     }
 

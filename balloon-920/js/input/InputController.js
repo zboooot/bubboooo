@@ -1,7 +1,7 @@
 import * as Config from '../config.js';
 import { isClownBall } from '../items/clownBalloon.js';
 import { isRainbowBall } from '../items/rainbowBalloon.js';
-import { FIELD_ITEM_HINT_TEXT } from '../ui/FieldItemHintController.js';
+import { FIELD_ITEM_HINT_TEXT, PUMP_DOCK_HINT_TEXT } from '../ui/FieldItemHintController.js';
 
 /** InputController */
 export class InputController {
@@ -65,8 +65,7 @@ export class InputController {
             }
 
             if (game.isInPumpZone(game.mouse.y)) {
-                const pumpIdx = game.pickPumpAt(game.mouse.x, game.mouse.y);
-                if (pumpIdx >= 0) game.selectedPumpIndex = pumpIdx;
+                game.showFieldItemHint?.(PUMP_DOCK_HINT_TEXT);
                 return;
             }
 

@@ -32,7 +32,7 @@ export class BalloonGameApp {
         this.currentLevelSpec = null;
         this.levelSpawnRng = null;
         this.levelIndex = 0;
-        this.appScreen = 'game';
+        this.appScreen = 'start';
         this.gameOutcome = 'playing';
         this.loseCountdown = null;
         this.winRevealCountdown = null;
@@ -110,10 +110,10 @@ export class BalloonGameApp {
         this._bindEvents();
         if (this.testLevelId) {
             this.bootstrapTestLevel(this.testLevelId);
+        } else if (this._startLevelOverride != null) {
+            this.bootstrapGame(this._startLevelOverride);
         } else {
-            const save = this.loadProgress();
-            const initialLevel = this._startLevelOverride ?? (save ? save.levelIndex : 0);
-            this.bootstrapGame(initialLevel);
+            this.showStartScreen();
         }
         this.pumpService.layoutPumpHitRects();
     }
@@ -168,10 +168,25 @@ export class BalloonGameApp {
     _bindEvents() {
         const { dom } = this;
         if (dom.btnStartPrimary) {
-            dom.btnStartPrimary.addEventListener('click', () => this.resumeGame());
+            dom.btnStartPrimary.addEventListener('click', () => {
+                if (this.appScreen === 'start') {
+                    const save = this.loadProgress();
+                    this.enterGame(save ? save.levelIndex : 0);
+                    return;
+                }
+                if (this.appScreen === 'pause') this.resumeGame();
+            });
         }
         if (dom.btnStartRestart) {
-            dom.btnStartRestart.addEventListener('click', () => this.restartFromPause());
+            dom.btnStartRestart.addEventListener('click', () => {
+                if (this.appScreen === 'start') {
+                    this.clearProgress();
+                    this.updateStartMenuUI();
+                    this.enterGame(0);
+                    return;
+                }
+                this.restartFromPause();
+            });
         }
         if (dom.stageEl) {
             dom.stageEl.addEventListener('pointerdown', () => {

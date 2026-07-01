@@ -186,26 +186,22 @@ export class BalloonService {
     }
 
     /**
-     * 气球标签数字：当前气量 0–100（100 = 即将撑爆）。
-     * 内部 ball.air 仍为「剩余可打气量」，与视觉/打气逻辑一致。
+     * 气球标签数字：剩余还需打气的量（向上取整）；气尽为 0。
      * @param {object} ball
      * @param {number} [remainingAir] 可选，用于打气前后对比动画
      */
     displayAirForLabel(ball, remainingAir) {
-        const cap = Config.AIR_CAPACITY;
         const rem = remainingAir !== undefined ? remainingAir : ball.air;
-        if (rem <= 0 && ball.imminentPopDelay != null) return cap;
-        const filled = cap - Math.max(0, rem);
-        return Math.min(cap, Math.max(0, Math.ceil(filled)));
+        if (rem <= 0) return 0;
+        return Math.ceil(rem);
     }
 
-    /** @param {number} displayAir displayAirForLabel 返回值 */
-    labelHeatFromDisplay(displayAir) {
-        const start = Config.AIR_LABEL_HEAT_START;
-        const cap = Config.AIR_CAPACITY;
-        if (displayAir < start) return 0;
-        const t = Math.min(1, (displayAir - start) / (cap - start));
-        const k = Config.AIR_LABEL_HEAT_EXP;
+    /** @param {number} displayRemaining displayAirForLabel 返回值（剩余气量） */
+    labelHeatFromDisplay(displayRemaining) {
+        const lowBand = Config.AIR_CAPACITY - Config.AIR_LABEL_RED_START;
+        if (displayRemaining > lowBand) return 0;
+        const t = Math.min(1, (lowBand - displayRemaining) / Math.max(lowBand, 1));
+        const k = Config.AIR_LABEL_RED_EXP;
         return (Math.exp(k * t) - 1) / (Math.exp(k) - 1);
     }
 
@@ -231,7 +227,7 @@ export class BalloonService {
     }
 
     /**
-     * 数字到 100 后的标签动效：瞬间冲击放大 + 全程渐隐
+     * 剩余气量归零后的标签动效：瞬间冲击放大 + 全程渐隐
      * @returns {{ scaleMul: number, alpha: number } | null}
      */
     imminentLabelPresentation(ball) {
@@ -331,42 +327,9 @@ export class BalloonService {
         }
     }
 
-    /** @returns {number} 0–1，当前气量 ≥90 时指数趋红 */
+    /** @returns {number} 0–1，剩余气量很少时指数趋红 */
     displayAirLabelRedBlend(ball) {
-        const display = this.displayAirForLabel(ball);
-        const start = Config.AIR_LABEL_RED_START;
-        if (display < start) return 0;
-        const span = Config.AIR_CAPACITY - start;
-        const t = Math.min(1, Math.max(0, (display - start) / span));
-        const k = Config.AIR_LABEL_RED_EXP;
-        if (t <= 0) return 0;
-        return (Math.exp(k * t) - 1) / (Math.exp(k) - 1);
-    }
-
-    /**
-     * 气球标签数字：当前气量 0–100（100 = 即将撑爆）。
-     * 内部 ball.air 仍为「剩余可打气量」，与视觉/打气逻辑一致。
-     * @param {object} ball
-     * @param {number} [remainingAir] 可选，用于打气前后对比动画
-     */
-    displayAirForLabel(ball, remainingAir) {
-        const cap = Config.AIR_CAPACITY;
-        const rem = remainingAir !== undefined ? remainingAir : ball.air;
-        if (rem <= 0 && ball.imminentPopDelay != null) return cap;
-        const filled = cap - Math.max(0, rem);
-        return Math.min(cap, Math.max(0, Math.ceil(filled)));
-    }
-
-    /** @returns {number} 0–1，当前气量 ≥90 时指数趋红 */
-    displayAirLabelRedBlend(ball) {
-        const display = this.displayAirForLabel(ball);
-        const start = Config.AIR_LABEL_RED_START;
-        if (display < start) return 0;
-        const span = Config.AIR_CAPACITY - start;
-        const t = Math.min(1, Math.max(0, (display - start) / span));
-        const k = Config.AIR_LABEL_RED_EXP;
-        if (t <= 0) return 0;
-        return (Math.exp(k * t) - 1) / (Math.exp(k) - 1);
+        return this.labelHeatFromDisplay(this.displayAirForLabel(ball));
     }
 
     airToFillRatio(air) {
@@ -737,8 +700,8 @@ export class BalloonService {
             game.ensureBallLabelState(ball);
             const ceilBefore = game.displayAirForLabel(ball, airBefore);
             const ceilAfter = game.displayAirForLabel(ball);
-            if (ceilAfter > ceilBefore) {
-                const step = ceilAfter - ceilBefore;
+            if (ceilAfter < ceilBefore) {
+                const step = ceilBefore - ceilAfter;
                 ball.labelLift = Math.min(ball.radius * 0.4, ball.labelLift + 3.2 + step * 1.2);
                 ball.labelPulse = Math.min(1, ball.labelPulse + 0.55 + step * 0.15);
                 ball.labelScale = Math.min(1.34, ball.labelScale + 0.07 + step * 0.03);

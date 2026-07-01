@@ -349,13 +349,21 @@ export class PumpService {
             ctx.stroke();
 
             game.layoutPumpHitRects();
+            let activePumpSlot = -1;
+            if (
+                game.inflatePumpActive
+                && game.activeInflateBall
+                && game.balls.includes(game.activeInflateBall)
+            ) {
+                activePumpSlot = game.pumpSlotForBall(game.activeInflateBall);
+            }
             for (let i = 0; i < game.activeTeams.length; i++) {
                 const r = game.pumpHitRects[i];
                 if (!r) continue;
                 const tool = game.paletteTeam(game.activeTeams[i]);
                 game.drawPumpIcon(
                     r.x, r.y, r.w, r.h, tool, i,
-                    game.selectedPumpIndex === i, game.pumpFuelRemaining[i] ?? 0
+                    activePumpSlot === i, game.pumpFuelRemaining[i] ?? 0
                 );
             }
     }

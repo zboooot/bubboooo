@@ -1,7 +1,24 @@
-/** 暂停界面：继续 / 重新开始（非启动页） */
+/** 启动页与暂停层（共用 #startScreen） */
 export class PauseController {
     constructor(game) {
         this.game = game;
+    }
+
+    updateStartMenuUI() {
+        const game = this.game;
+        if (!game.dom.btnStartPrimary) return;
+        game.dom.btnStartPrimary.textContent = game.loadProgress() ? '继续' : '开始游戏';
+    }
+
+    showStartScreen() {
+        const game = this.game;
+        game.appScreen = 'start';
+        if (game.dom.startScreenEl) game.dom.startScreenEl.classList.remove('hidden');
+        this.updateStartMenuUI();
+        game.pointerDown = false;
+        game.activeInflateBall = null;
+        game.dragNode = null;
+        game.pendingDragParticle = null;
     }
 
     showPauseScreen() {
@@ -28,14 +45,19 @@ export class PauseController {
         game.sfx.resume();
     }
 
-    /** 首次进入或刷新：直接进游戏，不显示暂停层 */
-    bootstrapGame(levelIndex) {
+    /** 从启动页进入游戏 */
+    enterGame(levelIndex) {
         const game = this.game;
         game.hidePauseScreen();
         game.sfx.resume();
         game.loadLevelImmediate(Math.max(0, levelIndex));
         game.saveProgress();
         game.sfx.autoplayBgm();
+    }
+
+    /** URL 指定关卡等：跳过启动页直接进关 */
+    bootstrapGame(levelIndex) {
+        this.enterGame(levelIndex);
     }
 
     /** 独立测试关入口，不读写主线存档 */
