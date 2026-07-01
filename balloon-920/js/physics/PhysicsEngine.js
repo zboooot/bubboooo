@@ -231,9 +231,9 @@ export class PhysicsEngine {
                         if (p.x > Config.width - padding) p.x = Config.width - padding;
                         if (p.x < padding) p.x = padding;
                     }
-                    game.solveTetrisWallCollisions();
                 }
 
+                game.solveTetrisWallCollisions();
                 game.solveBallCollisions();
                 game.solveTetrisWallCollisions();
 

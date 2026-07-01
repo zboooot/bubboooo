@@ -11,6 +11,44 @@ import {
     pickRandomTetromino,
 } from './tetrisWall.js';
 
+/** 墙碰撞 slop；粗筛外扩与粒子检测共用 */
+const WALL_COLLISION_SLOP = 2.2;
+const WALL_BROADPHASE_PAD = WALL_COLLISION_SLOP + 3;
+
+/** @param {{ x: number, y: number, w: number, h: number }[]} cells */
+function aabbFromCells(cells, pad = 0) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < cells.length; i++) {
+        const c = cells[i];
+        minX = Math.min(minX, c.x);
+        minY = Math.min(minY, c.y);
+        maxX = Math.max(maxX, c.x + c.w);
+        maxY = Math.max(maxY, c.y + c.h);
+    }
+    return {
+        minX: minX - pad,
+        minY: minY - pad,
+        maxX: maxX + pad,
+        maxY: maxY + pad,
+    };
+}
+
+function aabbsOverlap(a, bMinX, bMinY, bMaxX, bMaxY) {
+    return !(bMaxX < a.minX || bMinX > a.maxX || bMaxY < a.minY || bMinY > a.maxY);
+}
+
+function particleNearCell(px, py, cell, slop) {
+    return (
+        px >= cell.x - slop &&
+        px <= cell.x + cell.w + slop &&
+        py >= cell.y - slop &&
+        py <= cell.y + cell.h + slop
+    );
+}
+
 /** 关卡内俄罗斯方块形状金属墙 */
 export class TetrisWallService {
     constructor(game) {
@@ -25,7 +63,10 @@ export class TetrisWallService {
         const game = this.game;
         if (!game.tetrisWalls?.length) return false;
         for (let w = 0; w < game.tetrisWalls.length; w++) {
-            for (const cell of game.tetrisWalls[w].cells) {
+            const wall = game.tetrisWalls[w];
+            const a = wall.aabb;
+            if (a && (x < a.minX || x > a.maxX || y < a.minY || y > a.maxY)) continue;
+            for (const cell of wall.cells) {
                 if (
                     x >= cell.x &&
                     x <= cell.x + cell.w &&
@@ -87,11 +128,14 @@ export class TetrisWallService {
                         originX,
                         originY,
                     );
+                    const aabb = aabbFromCells(cells, WALL_BROADPHASE_PAD);
                     game.tetrisWalls.push({
                         id: piece.id,
                         rotation: piece.rotation,
                         cells,
                         outline,
+                        aabb,
+                        outlineBox: this._outlineBBox(outline),
                     });
                     game.sfx?.playTetrisWallSpawn?.();
                     placed = true;
@@ -169,12 +213,25 @@ export class TetrisWallService {
         return dx * dx + dy * dy < r * r;
     }
 
-    resolveParticleVsTetrisWalls(particle, slop = 2.2) {
+    resolveParticleVsTetrisWalls(particle, slop = WALL_COLLISION_SLOP) {
         const game = this.game;
-        if (!game.tetrisWalls?.length) return;
-
-        for (let w = 0; w < game.tetrisWalls.length; w++) {
-            for (const cell of game.tetrisWalls[w].cells) {
+        const walls = game.tetrisWalls;
+        if (!walls?.length) return;
+        const pad = WALL_BROADPHASE_PAD;
+        for (let w = 0; w < walls.length; w++) {
+            const wall = walls[w];
+            const a = wall.aabb;
+            if (
+                a &&
+                (particle.x < a.minX - pad ||
+                    particle.x > a.maxX + pad ||
+                    particle.y < a.minY - pad ||
+                    particle.y > a.maxY + pad)
+            ) {
+                continue;
+            }
+            for (const cell of wall.cells) {
+                if (!particleNearCell(particle.x, particle.y, cell, slop)) continue;
                 this._pushParticleOutOfRect(particle, cell.x, cell.y, cell.x + cell.w, cell.y + cell.h, slop);
             }
         }
@@ -209,14 +266,38 @@ export class TetrisWallService {
 
     solveTetrisWallCollisions() {
         const game = this.game;
-        if (!game.tetrisWalls?.length) return;
-        const slop = 2.2;
+        const walls = game.tetrisWalls;
+        if (!walls?.length) return;
+        const slop = WALL_COLLISION_SLOP;
+        const pad = WALL_BROADPHASE_PAD;
+
         for (let b = 0; b < game.balls.length; b++) {
-            const pts = game.balls[b].particles;
-            for (let i = 0; i < pts.length; i++) {
-                if (pts[i] === game.dragNode) continue;
-                if (game.particleInSpawnGrowBall?.(pts[i])) continue;
-                game.resolveParticleVsTetrisWalls(pts[i], slop);
+            const ball = game.balls[b];
+            game.syncBallBounds(ball);
+            const hullR = Math.max(ball.boundsRadius, ball.radius) + pad;
+            const bMinX = ball.cx - hullR;
+            const bMaxX = ball.cx + hullR;
+            const bMinY = ball.cy - hullR;
+            const bMaxY = ball.cy + hullR;
+
+            const pts = ball.particles;
+            for (let w = 0; w < walls.length; w++) {
+                const wall = walls[w];
+                const a = wall.aabb;
+                if (!a || !aabbsOverlap(a, bMinX, bMinY, bMaxX, bMaxY)) continue;
+
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    if (p === game.dragNode) continue;
+                    if (game.particleInSpawnGrowBall?.(p)) continue;
+                    if (p.x < a.minX - pad || p.x > a.maxX + pad || p.y < a.minY - pad || p.y > a.maxY + pad) {
+                        continue;
+                    }
+                    for (const cell of wall.cells) {
+                        if (!particleNearCell(p.x, p.y, cell, slop)) continue;
+                        this._pushParticleOutOfRect(p, cell.x, cell.y, cell.x + cell.w, cell.y + cell.h, slop);
+                    }
+                }
             }
         }
     }
@@ -252,7 +333,7 @@ export class TetrisWallService {
             const outline = wall.outline;
             if (!this._traceWallPath(ctx, outline)) continue;
 
-            const box = this._outlineBBox(outline);
+            const box = wall.outlineBox ?? this._outlineBBox(outline);
             const g = ctx.createLinearGradient(box.minX, box.minY, box.maxX, box.maxY);
             g.addColorStop(0, light);
             g.addColorStop(0.42, base);
