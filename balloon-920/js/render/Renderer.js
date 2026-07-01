@@ -6,6 +6,87 @@ const JOKER_ASSETS = ['joker.png', 'joker2.png'];
 /** 低于此 alpha 的像素视为全透明，避免缩放后出现方形描边 */
 const JOKER_ALPHA_CUT = 14;
 
+/** 彩虹球面纹理相位量化（越小越省 CPU，环向滚动仍连续） */
+const RAINBOW_OVERLAY_PHASE_BUCKETS = 8;
+/** 烘焙像素相对逻辑尺寸的比例（绘制时放大，观感几乎不变） */
+const RAINBOW_OVERLAY_PIXEL_SCALE = 0.45;
+const RAINBOW_OVERLAY_POOL_MAX = 36;
+const RAINBOW_SPECTRUM_RGB = [
+    [255, 92, 92],
+    [255, 179, 71],
+    [255, 224, 102],
+    [105, 219, 124],
+    [77, 171, 247],
+    [151, 117, 250],
+    [255, 92, 92],
+];
+const RAINBOW_BAND_REPEATS = 0.58;
+
+function sampleRainbowRgbAt(t) {
+    let u = t % 1;
+    if (u < 0) u += 1;
+    const seg = RAINBOW_SPECTRUM_RGB.length - 1;
+    const f = u * seg;
+    const i = Math.min(Math.floor(f), seg - 1);
+    const c0 = RAINBOW_SPECTRUM_RGB[i];
+    const c1 = RAINBOW_SPECTRUM_RGB[i + 1];
+    const a = f - i;
+    return [
+        (c0[0] + (c1[0] - c0[0]) * a + 0.5) | 0,
+        (c0[1] + (c1[1] - c0[1]) * a + 0.5) | 0,
+        (c0[2] + (c1[2] - c0[2]) * a + 0.5) | 0,
+    ];
+}
+
+/** 直边闭合多边形（性能优先） */
+function traceBalloonOutline(ctx, pts, originX = 0, originY = 0) {
+    const n = pts.length;
+    if (!n) return;
+    ctx.moveTo(pts[0].x - originX, pts[0].y - originY);
+    for (let i = 1; i < n; i++) {
+        ctx.lineTo(pts[i].x - originX, pts[i].y - originY);
+    }
+    if (n > 2) ctx.closePath();
+}
+
+/** 边中点 + 顶点控制的闭合二次曲线；可选原点偏移（用于 translate 后本地填充） */
+function traceSmoothBalloonOutline(ctx, pts, originX = 0, originY = 0) {
+    const n = pts.length;
+    if (n < 3) {
+        if (!n) return;
+        ctx.moveTo(pts[0].x - originX, pts[0].y - originY);
+        for (let i = 1; i < n; i++) ctx.lineTo(pts[i].x - originX, pts[i].y - originY);
+        if (n > 2) ctx.closePath();
+        return;
+    }
+    const edgeMid = (i) => {
+        const j = (i + 1) % n;
+        return {
+            x: (pts[i].x + pts[j].x) * 0.5 - originX,
+            y: (pts[i].y + pts[j].y) * 0.5 - originY,
+        };
+    };
+    const m0 = edgeMid(0);
+    ctx.moveTo(m0.x, m0.y);
+    for (let i = 0; i < n; i++) {
+        const v = (i + 1) % n;
+        const m = edgeMid(v);
+        ctx.quadraticCurveTo(
+            pts[v].x - originX, pts[v].y - originY,
+            m.x, m.y,
+        );
+    }
+    ctx.closePath();
+}
+
+function traceBalloonPath(ctx, pts, originX = 0, originY = 0) {
+    if (Config.BALLOON_SMOOTH_OUTLINE) {
+        traceSmoothBalloonOutline(ctx, pts, originX, originY);
+    } else {
+        traceBalloonOutline(ctx, pts, originX, originY);
+    }
+}
+
 /** Renderer */
 export class Renderer {
     constructor(game) {
@@ -14,7 +95,7 @@ export class Renderer {
             const img = new Image();
             img.decoding = 'async';
             img.addEventListener('load', () => this._bakeJokerCanvas(img), { once: true });
-            img.src = new URL(`../../assets/${file}`, import.meta.url).href;
+            img.src = `${Config.ASSET_ROOT}${file}`;
             if (img.complete && img.naturalWidth) this._bakeJokerCanvas(img);
             return img;
         });
@@ -22,7 +103,7 @@ export class Renderer {
         this.luckIconImage = new Image();
         this.luckIconImage.decoding = 'async';
         this.luckIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.luckIconImage), { once: true });
-        this.luckIconImage.src = new URL('../../assets/luck.png', import.meta.url).href;
+        this.luckIconImage.src = `${Config.ASSET_ROOT}luck.png`;
         if (this.luckIconImage.complete && this.luckIconImage.naturalWidth) {
             this._bakeJokerCanvas(this.luckIconImage);
         }
@@ -30,7 +111,7 @@ export class Renderer {
         this.clownIconImage = new Image();
         this.clownIconImage.decoding = 'async';
         this.clownIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.clownIconImage), { once: true });
-        this.clownIconImage.src = new URL('../../assets/clown.png', import.meta.url).href;
+        this.clownIconImage.src = `${Config.ASSET_ROOT}clown.png`;
         if (this.clownIconImage.complete && this.clownIconImage.naturalWidth) {
             this._bakeJokerCanvas(this.clownIconImage);
         }
@@ -38,10 +119,19 @@ export class Renderer {
         this.clownRevealIconImage = new Image();
         this.clownRevealIconImage.decoding = 'async';
         this.clownRevealIconImage.addEventListener('load', () => this._bakeJokerCanvas(this.clownRevealIconImage), { once: true });
-        this.clownRevealIconImage.src = new URL('../../assets/clown_reveal.png', import.meta.url).href;
+        this.clownRevealIconImage.src = `${Config.ASSET_ROOT}clown_reveal.png`;
         if (this.clownRevealIconImage.complete && this.clownRevealIconImage.naturalWidth) {
             this._bakeJokerCanvas(this.clownRevealIconImage);
         }
+
+        /** @type {Map<string, CanvasGradient>} */
+        this._ballGradientCache = new Map();
+        /** @type {Map<string, CanvasGradient>} */
+        this._rainbowBaseGradientCache = new Map();
+        /** @type {Map<string, { pad: number, canvas: HTMLCanvasElement }>} */
+        this._rainbowOverlayPool = new Map();
+        /** @type {string[]} */
+        this._rainbowOverlayPoolOrder = [];
     }
 
     _bakeJokerCanvas(img) {
@@ -237,57 +327,148 @@ export class Renderer {
 
     /** @param {string[]} spectrum 首尾同色 */
     _sampleRainbowSpectrum(spectrum, t) {
-        let u = t % 1;
-        if (u < 0) u += 1;
-        const seg = spectrum.length - 1;
-        const f = u * seg;
-        const i = Math.min(Math.floor(f), seg - 1);
-        return this._lerpHexColor(spectrum[i], spectrum[i + 1], f - i);
+        const rgb = this._sampleRainbowSpectrumRgb(spectrum, t);
+        return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    }
+
+    /** @param {string[]} spectrum */
+    _sampleRainbowSpectrumRgb(spectrum, t) {
+        return sampleRainbowRgbAt(t);
+    }
+
+    _rainbowOverlayCacheKey(ball, r, simTime) {
+        const rKey = Math.max(
+            Config.MIN_BALLOON_RADIUS,
+            Math.min(Config.MAX_BALLOON_RADIUS, Math.round(r / 4) * 4),
+        );
+        const phase = (simTime * 0.2 + (ball.rainbowHueOffset ?? 0) * 0.002) % 1;
+        const phaseKey = Math.floor(phase * RAINBOW_OVERLAY_PHASE_BUCKETS);
+        const hueKey = Math.floor((ball.rainbowHueOffset ?? 0) * 0.05);
+        return `${rKey}|${phaseKey}|${hueKey}`;
+    }
+
+    _phaseFromOverlayKey(phaseKey, hueKey) {
+        let phase = (phaseKey + 0.5) / RAINBOW_OVERLAY_PHASE_BUCKETS;
+        phase += (hueKey * 20 + 10) * 0.002;
+        return phase % 1;
+    }
+
+    _touchRainbowPoolKey(key) {
+        const order = this._rainbowOverlayPoolOrder;
+        const idx = order.indexOf(key);
+        if (idx >= 0) order.splice(idx, 1);
+        order.push(key);
+    }
+
+    _evictRainbowPoolIfNeeded() {
+        while (this._rainbowOverlayPoolOrder.length > RAINBOW_OVERLAY_POOL_MAX) {
+            const old = this._rainbowOverlayPoolOrder.shift();
+            if (old) this._rainbowOverlayPool.delete(old);
+        }
+    }
+
+    /** 全局共享半球彩虹纹理（多球同规格复用，降分辨率烘焙） */
+    _getSharedRainbowOverlay(ball, r, simTime) {
+        const key = this._rainbowOverlayCacheKey(ball, r, simTime);
+        let entry = this._rainbowOverlayPool.get(key);
+        if (entry) {
+            this._touchRainbowPoolKey(key);
+            return entry;
+        }
+
+        const parts = key.split('|');
+        const rKey = Number(parts[0]);
+        const phaseKey = Number(parts[1]);
+        const hueKey = Number(parts[2]);
+        const phase = this._phaseFromOverlayKey(phaseKey, hueKey);
+
+        const pad = Math.ceil(rKey * 1.28);
+        const lw = pad * 2;
+        const bw = Math.max(8, Math.round(lw * RAINBOW_OVERLAY_PIXEL_SCALE));
+        const bh = bw;
+        const layer = document.createElement('canvas');
+        layer.width = bw;
+        layer.height = bh;
+        const lctx = layer.getContext('2d', { alpha: true });
+        const img = lctx.createImageData(bw, bh);
+        const data = img.data;
+        const invR = 1 / Math.max(rKey, 1);
+        const toLogical = lw / bw;
+        const padS = pad * (bw / lw);
+        const twoPi = Math.PI * 2;
+
+        for (let py = 0; py < bh; py++) {
+            const dy = (py - padS) * toLogical * invR;
+            for (let px = 0; px < bw; px++) {
+                const dx = (px - padS) * toLogical * invR;
+                const d2 = dx * dx + dy * dy;
+                if (d2 > 1.02) continue;
+                const dz = Math.sqrt(Math.max(0, 1 - d2));
+                const lon = Math.atan2(dx, dz);
+                let u = ((lon / twoPi + 0.5) * RAINBOW_BAND_REPEATS + phase) % 1;
+                if (u < 0) u += 1;
+                const rgb = sampleRainbowRgbAt(u);
+                const idx = (py * bw + px) * 4;
+                data[idx] = rgb[0];
+                data[idx + 1] = rgb[1];
+                data[idx + 2] = rgb[2];
+                data[idx + 3] = 255;
+            }
+        }
+        lctx.putImageData(img, 0, 0);
+        entry = { pad, canvas: layer };
+        this._rainbowOverlayPool.set(key, entry);
+        this._touchRainbowPoolKey(key);
+        this._evictRainbowPoolIfNeeded();
+        return entry;
+    }
+
+    _getRainbowBaseGradient(ctx, r) {
+        const rKey = Math.round(r / 4) * 4;
+        const key = `base|${rKey}`;
+        let grad = this._rainbowBaseGradientCache.get(key);
+        if (!grad) {
+            grad = ctx.createRadialGradient(
+                -rKey * 0.32, -rKey * 0.32, rKey * 0.08,
+                0, 0, rKey * 1.08,
+            );
+            grad.addColorStop(0, '#f8f8fb');
+            grad.addColorStop(0.55, '#e8e9ef');
+            grad.addColorStop(1, '#c9cad4');
+            this._rainbowBaseGradientCache.set(key, grad);
+        }
+        return grad;
     }
 
     /**
      * 按正面半球经纬采样：色带沿球面弯曲，缓慢环向平移（非直线条纹）
      */
     _paintSphericalRainbowOverlay(ctx, ball, cx, cy, r, simTime) {
-        const spectrum = ['#ff5c5c', '#ffb347', '#ffe066', '#69db7c', '#4dabf7', '#9775fa', '#ff5c5c'];
-        const bandRepeats = 0.58;
-        const phase = (simTime * 0.2 + (ball.rainbowHueOffset ?? 0) * 0.002) % 1;
+        const cache = this._getSharedRainbowOverlay(ball, r, simTime);
+        const pad = cache.pad;
+        const logical = pad * 2;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'medium';
+        ctx.drawImage(
+            cache.canvas,
+            cx - pad, cy - pad, logical, logical,
+        );
+    }
 
-        const pad = Math.ceil(r * 1.28);
-        const w = pad * 2;
-        const h = pad * 2;
-        const layer = document.createElement('canvas');
-        layer.width = w;
-        layer.height = h;
-        const lctx = layer.getContext('2d');
-        const img = lctx.createImageData(w, h);
-        const data = img.data;
-        const ox = cx - pad;
-        const oy = cy - pad;
-        const invR = 1 / Math.max(r, 1);
-
-        for (let py = 0; py < h; py++) {
-            for (let px = 0; px < w; px++) {
-                const dx = (ox + px - cx) * invR;
-                const dy = (oy + py - cy) * invR;
-                const d2 = dx * dx + dy * dy;
-                if (d2 > 1.02) continue;
-                const dz = Math.sqrt(Math.max(0, 1 - d2));
-                const lon = Math.atan2(dx, dz);
-                let u = ((lon / (Math.PI * 2) + 0.5) * bandRepeats + phase) % 1;
-                if (u < 0) u += 1;
-                const rgb = this._sampleRainbowSpectrum(spectrum, u);
-                const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(rgb);
-                if (!m) continue;
-                const idx = (py * w + px) * 4;
-                data[idx] = Number(m[1]);
-                data[idx + 1] = Number(m[2]);
-                data[idx + 2] = Number(m[3]);
-                data[idx + 3] = 255;
-            }
+    _getBallFillGradient(ctx, colorLight, colorBase, radius) {
+        const rKey = Math.round(radius * 2) / 2;
+        const key = `${colorLight}|${colorBase}|${rKey}`;
+        let grad = this._ballGradientCache.get(key);
+        if (!grad) {
+            grad = ctx.createRadialGradient(
+                -rKey * 0.3, -rKey * 0.3, rKey * 0.1,
+                0, 0, rKey * 1.1,
+            );
+            grad.addColorStop(0, colorLight);
+            grad.addColorStop(1, colorBase);
+            this._ballGradientCache.set(key, grad);
         }
-        lctx.putImageData(img, 0, 0);
-        ctx.drawImage(layer, ox, oy);
+        return grad;
     }
 
     /** 灰白底 + 70% 透明球面环向彩虹（路径需已 closePath） */
@@ -295,15 +476,11 @@ export class Renderer {
         const game = this.game;
         const r = ball.radius;
 
-        const base = ctx.createRadialGradient(
-            cx - r * 0.32, cy - r * 0.32, r * 0.08,
-            cx, cy, r * 1.08,
-        );
-        base.addColorStop(0, '#f8f8fb');
-        base.addColorStop(0.55, '#e8e9ef');
-        base.addColorStop(1, '#c9cad4');
-        ctx.fillStyle = base;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.fillStyle = this._getRainbowBaseGradient(ctx, r);
         ctx.fill();
+        ctx.restore();
 
         ctx.save();
         ctx.clip();
@@ -396,12 +573,29 @@ export class Renderer {
             fontSize = Math.min(fontSize, ball.radius * 0.8);
 
             ctx.font = `bold ${fontSize}px "ZCOOL KuaiLe", system-ui, sans-serif`;
-            let textW = ctx.measureText(airLabel).width;
+            const fontKey = Math.round(fontSize * 20);
+            const measureCache = ball._labelMeasureCache;
+            let textW;
+            if (
+                measureCache
+                && measureCache.airLabel === airLabel
+                && measureCache.fontKey === fontKey
+            ) {
+                textW = measureCache.textW;
+            } else {
+                textW = ctx.measureText(airLabel).width;
+                ball._labelMeasureCache = { airLabel, fontKey, textW };
+            }
             const maxW = ball.radius * 1.55;
             if (textW > maxW) {
                 fontSize *= maxW / textW;
                 ctx.font = `bold ${fontSize}px "ZCOOL KuaiLe", system-ui, sans-serif`;
                 textW = ctx.measureText(airLabel).width;
+                ball._labelMeasureCache = {
+                    airLabel,
+                    fontKey: Math.round(fontSize * 20),
+                    textW,
+                };
             }
 
             const textH = fontSize;
@@ -506,22 +700,20 @@ export class Renderer {
                 const cx = ball.cx;
                 const cy = ball.cy;
 
-                ctx.beginPath();
-                ctx.moveTo(pts[0].x, pts[0].y);
-                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-                ctx.closePath();
-
                 if (isRainbowBall(ball)) {
+                    ctx.beginPath();
+                    traceBalloonPath(ctx, pts);
                     game.drawRainbowBalloonFill(ctx, ball, cx, cy);
                 } else {
-                    const grad = ctx.createRadialGradient(
-                        cx - ball.radius * 0.3, cy - ball.radius * 0.3, ball.radius * 0.1,
-                        cx, cy, ball.radius * 1.1
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    ctx.beginPath();
+                    traceBalloonPath(ctx, pts, cx, cy);
+                    ctx.fillStyle = this._getBallFillGradient(
+                        ctx, ball.colorLight, ball.colorBase, ball.radius,
                     );
-                    grad.addColorStop(0, ball.colorLight);
-                    grad.addColorStop(1, ball.colorBase);
-                    ctx.fillStyle = grad;
                     ctx.fill();
+                    ctx.restore();
                 }
 
                 if (!isClownBall(ball) && !isRainbowBall(ball)) {
@@ -532,7 +724,9 @@ export class Renderer {
                         ball.radius * 0.22, ball.radius * 0.13, -Math.PI / 4, 0, Math.PI * 2
                     );
                     ctx.fill();
-                    game.drawImminentPopBallFx(ball, cx, cy);
+                    if (ball.imminentPopDelay != null) {
+                        game.drawImminentPopBallFx(ball, cx, cy);
+                    }
                     game.drawBallAirLabel(ball, cx, cy);
                     game.drawEmbeddedItemIcon?.(ball, cx, cy);
                 } else if (isClownBall(ball)) {
@@ -546,9 +740,9 @@ export class Renderer {
 
             for (const fx of game.popEffects) {
                 const alpha = Math.max(0, fx.life / fx.maxLife);
-                const r = parseInt(fx.color.slice(1, 3), 16);
-                const g = parseInt(fx.color.slice(3, 5), 16);
-                const b = parseInt(fx.color.slice(5, 7), 16);
+                const r = fx.r ?? parseInt(fx.color.slice(1, 3), 16);
+                const g = fx.g ?? parseInt(fx.color.slice(3, 5), 16);
+                const b = fx.b ?? parseInt(fx.color.slice(5, 7), 16);
                 if (fx.kind === 'streak') {
                     const spd = Math.hypot(fx.vx, fx.vy) || 1;
                     const ux = fx.vx / spd;

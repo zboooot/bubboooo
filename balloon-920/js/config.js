@@ -1,10 +1,12 @@
-export const APP_VERSION = '1.17';
+export const APP_VERSION = '1.24';
 export const APP_VERSION_DATE = '2026-07-01';
 
 export const LOGICAL_WIDTH = 360;
 export const LOGICAL_HEIGHT = 800;
 
 export const SAVE_KEY = 'balloon920_progress_v1';
+/** 相对当前页面目录；发布包构建会替换为 ../../assets/ */
+export const ASSET_ROOT = 'assets/';
 
 export const width = LOGICAL_WIDTH;
 export const height = LOGICAL_HEIGHT;
@@ -13,6 +15,14 @@ export const gravity = { x: 0, y: 1500 };
 export const numSubsteps = 6;
 export const pbdIterations = 2;
 export const dt = 1 / 60;
+/**
+ * 每秒真实时间要跑多少模拟步（与内建屏 120Hz 下「每帧一步」一致）。
+ * 外接 60Hz / 掉帧设备会在一帧内补多步，避免慢动作。
+ */
+export const SIM_STEPS_PER_SECOND = 120;
+export const SIM_MAX_FRAME_DT = 0.1;
+/** 约 24fps 时一帧最多需 120/24≈5 步 */
+export const SIM_MAX_STEPS_PER_FRAME = 10;
 
 export const MIN_BALLOON_RADIUS = 36;
 export const MAX_BALLOON_RADIUS = 68;
@@ -40,11 +50,19 @@ export const BALLOON_FIELD_PAD_BOTTOM = 8;
 export const SMALL_BALLOON_AIR_START = 12;
 export const SMALL_BALLOON_AIR_END = 99;
 export const SMALL_BALLOON_RADIUS_MUL_AT_MAX_AIR = 0.6;
-export const PARTICLES_PER_BALLOON = 20;
+/** 物理/碰撞粒子数（越少越省 CPU；点击判定仍用此多边形） */
+export const PARTICLES_PER_BALLOON = 16;
+/**
+ * 仅影响绘制：在粒子顶点之间用二次曲线描边，观感更圆，几乎不增加物理成本。
+ * 与 PARTICLES_PER_BALLOON 解耦——推荐 true + 16 粒子。
+ */
+export const BALLOON_SMOOTH_OUTLINE = true;
 export const AIR_CAPACITY = 100;
 export const PUMP_AIR_RATE = 164;
 export const INFLATE_MAX_SCALE = 1.842;
 export const FULL_POP_DELAY = 0.28;
+/** 标签到 100、撑爆倒计时期间是否生成 popEffects 放射线/火花粒子 */
+export const IMMINENT_POP_SPARK_PARTICLES = false;
 /** 剩余气量 ≤ (AIR_CAPACITY - 该值) 时标签向红色指数过渡（90 → 剩余 ≤10） */
 export const AIR_LABEL_RED_START = 90;
 export const AIR_LABEL_RED_EXP = 4.5;

@@ -9,6 +9,13 @@ const ALL_ITEM_TYPES = /** @type {MainlineItemType[]} */ ([
     'tetris_wall',
 ]);
 
+/** 主线第 4–8 关：每关独立掷一次，成功则固定投放 1 个飞镖（绑定随机 spawnIndex） */
+export const MAINLINE_LEVEL_4_8_DART_PROB = 0.5;
+/** 主线第 4–8 关：相对程序生成基准的场上球数系数（0.8 = 少 20%） */
+export const MAINLINE_LEVEL_4_8_BALLOON_COUNT_MUL = 0.8;
+
+const ITEM_TYPES_WITHOUT_DART = ALL_ITEM_TYPES.filter((t) => t !== 'ninja_dart');
+
 export function mergeMainlineItemFields(target, fields) {
     target.fieldBalloonSlots = fields.fieldBalloonSlots ?? [];
     target.popItemDrops = fields.popItemDrops ?? [];
@@ -37,10 +44,19 @@ export function buildMainlineItemFields(levelIndex, slotCount, rng) {
     if (levelNum === 4) {
         const idx = defaultRainbowSpawnIndex(n);
         out.fieldBalloonSlots.push({ spawnIndex: idx, kind: 'rainbow' });
+        tryAddOneNinjaDartDrop(out, n, used, rng);
         return out;
     }
 
-    if (levelNum >= 5 && levelNum <= 14) {
+    if (levelNum >= 5 && levelNum <= 8) {
+        const typeCount = rng() < 0.42 ? 1 : 2;
+        const types = pickDistinctTypes(ITEM_TYPES_WITHOUT_DART, typeCount, rng);
+        applyItemTypes(out, types, n, used, rng);
+        tryAddOneNinjaDartDrop(out, n, used, rng);
+        return out;
+    }
+
+    if (levelNum >= 9 && levelNum <= 14) {
         const typeCount = rng() < 0.42 ? 1 : 2;
         const types = pickDistinctTypes(ALL_ITEM_TYPES, typeCount, rng);
         applyItemTypes(out, types, n, used, rng);
@@ -93,6 +109,13 @@ export function applyMainlineItemPlan(level, levelIndex, slotCount) {
 
 function defaultRainbowSpawnIndex(n) {
     return Math.min(n - 1, Math.max(0, Math.floor(n * 0.42)));
+}
+
+function tryAddOneNinjaDartDrop(out, n, used, rng) {
+    if (out.popItemDrops.some((d) => d.itemId === 'ninja_dart')) return;
+    if (rng() >= MAINLINE_LEVEL_4_8_DART_PROB) return;
+    const idx = pickPopDropIndex(n, used, rng);
+    if (idx >= 0) out.popItemDrops.push({ spawnIndex: idx, itemId: 'ninja_dart' });
 }
 
 function pickFieldSlot(n, used, rng) {

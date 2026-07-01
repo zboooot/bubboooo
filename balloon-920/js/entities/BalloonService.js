@@ -13,6 +13,15 @@ import {
     isRainbowBall,
 } from '../items/rainbowBalloon.js';
 
+function hexColorRgb(hex) {
+    if (!hex || hex[0] !== '#' || hex.length < 7) return { r: 255, g: 255, b: 255 };
+    return {
+        r: parseInt(hex.slice(1, 3), 16),
+        g: parseInt(hex.slice(3, 5), 16),
+        b: parseInt(hex.slice(5, 7), 16),
+    };
+}
+
 /** BalloonService */
 export class BalloonService {
     constructor(game) {
@@ -270,6 +279,7 @@ export class BalloonService {
     }
 
     spawnImminentPopSparks(ball, intensity = 1) {
+        if (!Config.IMMINENT_POP_SPARK_PARTICLES) return;
         const game = this.game;
         game.syncBallBounds(ball);
         const cx = ball.cx;
@@ -379,6 +389,7 @@ export class BalloonService {
     }
 
     spawnImminentPopBurst(ball) {
+        if (!Config.IMMINENT_POP_SPARK_PARTICLES) return;
         const game = this.game;
         const c = game.polygonCentroid(ball.particles);
         const sparks = ['#ff3b3b', '#ff6b35', '#ffcc66', '#fff5f5', ball.colorLight];
@@ -435,7 +446,12 @@ export class BalloonService {
                 const ball = game.balls[i];
                 if (ball.imminentPopDelay == null) continue;
                 game.applyImminentPopShake(ball, ball.imminentPopDelay);
-                if (Math.random() < 0.72) game.spawnImminentPopSparks(ball, 1 + Math.floor(Math.random() * 2));
+                if (
+                    Config.IMMINENT_POP_SPARK_PARTICLES
+                    && Math.random() < 0.72
+                ) {
+                    game.spawnImminentPopSparks(ball, 1 + Math.floor(Math.random() * 2));
+                }
                 ball.imminentPopDelay -= Config.dt;
                 if (ball.imminentPopDelay <= 0) {
                     ball.imminentPopDelay = null;
@@ -498,6 +514,7 @@ export class BalloonService {
                 const sparkColor = isRainbowBall(ball)
                     ? rainbowSpark[i % rainbowSpark.length]
                     : ball.colorLight;
+                const rgb = hexColorRgb(sparkColor);
                 game.popEffects.push({
                     x: c.x,
                     y: c.y,
@@ -506,6 +523,9 @@ export class BalloonService {
                     life: 0.55 + Math.random() * 0.35,
                     maxLife: 1,
                     color: sparkColor,
+                    r: rgb.r,
+                    g: rgb.g,
+                    b: rgb.b,
                     size: 2 + Math.random() * 4
                 });
             }

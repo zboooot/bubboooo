@@ -3,7 +3,10 @@ import { TEAM_PALETTE, TUTORIAL_LEVEL_COUNT, TUTORIAL_LEVELS, TEST_LEVELS } from
 import { clamp, makeSeededRng, rollEphemeralSeed } from '../utils/math.js';
 import { buildTestLabLevelSpec } from './testLabLevel.js';
 import { fieldBalloonSlotMap } from './levelItemPlacement.js';
-import { applyMainlineItemPlan } from './levelMainlineItems.js';
+import {
+    applyMainlineItemPlan,
+    MAINLINE_LEVEL_4_8_BALLOON_COUNT_MUL,
+} from './levelMainlineItems.js';
 import { spawnClownBalloon } from '../items/clownBalloon.js';
 import { spawnRainbowBalloon } from '../items/rainbowBalloon.js';
 
@@ -71,19 +74,27 @@ export class LevelService {
             ? `喘息 · ${levelIndex + 1}`
             : `征程 · ${levelIndex + 1}`;
 
+        const levelNum = levelIndex + 1;
+        const pumpFuelMultiplier = levelNum >= 4 && levelNum <= 8 ? 2 : 1;
+        let countFactor = breathLevel ? balloonCountFactor * 0.94 : balloonCountFactor;
+        if (levelNum >= 4 && levelNum <= 8) {
+            countFactor *= MAINLINE_LEVEL_4_8_BALLOON_COUNT_MUL;
+        }
+
         return {
             id: levelIndex + 1,
             title,
             procedural: true,
             seed,
-            balloonCountFactor: breathLevel ? balloonCountFactor * 0.94 : balloonCountFactor,
+            balloonCountFactor: countFactor,
             layoutRadiusScale,
             scatter,
             activeTeams,
             teamSpawnWeights,
             scarceSlot,
             pumpSlack: breathLevel ? pumpSlack + 0.06 : pumpSlack,
-            pumpNerfBySlot
+            pumpNerfBySlot,
+            pumpFuelMultiplier,
         };
     }
 
@@ -325,6 +336,10 @@ export class LevelService {
                 game.pumpFuelRemaining = level.pump.slice();
             } else {
                 game.pumpFuelRemaining = game.buildProceduralPump(level, layout);
+            }
+            const pumpMul = level.pumpFuelMultiplier ?? 1;
+            if (pumpMul > 1) {
+                game.pumpFuelRemaining = game.pumpFuelRemaining.map((f) => Math.ceil(f * pumpMul));
             }
             game.resetPumpFuelLabelAnims();
             if (game.isTutorialLevel(game.levelIndex)) {

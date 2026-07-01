@@ -15,8 +15,9 @@ export const TEAM_PALETTE = [
  * - embeddedItems: [{ spawnIndex, itemId, meta? }]
  *
  * 主线投放（levelMainlineItems.js）：
- * 1–2 关无道具；3 关 1 次随机飞镖；4 关固定 1 彩虹；5–14 关随机 1–2 种道具；
- * 15 关起墙/小丑加权 + 低概率飞镖/彩虹。
+ * 1–2 关无道具；3 关 1 次随机飞镖；4 关固定彩虹 + 概率 1 飞镖；
+ * 5–8 关随机 1–2 种道具（不含飞镖）+ 概率 1 飞镖；4–8 关气筒燃料 ×2、场上球数 ×0.8；
+ * 9–14 关随机 1–2 种道具；15 关起墙/小丑加权 + 低概率飞镖/彩虹。
  */
 
 export const TUTORIAL_LEVEL_COUNT = 3;

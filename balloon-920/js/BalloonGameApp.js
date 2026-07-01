@@ -64,6 +64,9 @@ export class BalloonGameApp {
         this.collisionPhase = 0;
         this.constraintOrderFlip = false;
         this.simTime = 0;
+        /** @type {number|null} */
+        this._lastFrameMs = null;
+        this._simAccum = 0;
         this.dragNode = null;
         this.pendingDragParticle = null;
         this.activeInflateBall = null;
@@ -230,47 +233,69 @@ export class BalloonGameApp {
         window.addEventListener('touchend', () => this.endDrag());
     }
 
-    loop() {
-        if (this.appScreen === 'game') {
-            this.simTime += Config.dt;
-            this.updateClownPopCinematic();
-            this.updateClownBurstSpawn();
-            this.updateBalloonSpawnGrows();
-            this.updateItems(Config.dt);
-            this.updateFieldItemHint(Config.dt);
+    _tickSimulationStep() {
+        const stepDt = Config.dt;
+        this.simTime += stepDt;
+        this.updateClownPopCinematic();
+        this.updateClownBurstSpawn();
+        this.updateBalloonSpawnGrows();
+        this.updateItems(stepDt);
+        this.updateFieldItemHint(stepDt);
 
-            const anchorHold = this.itemRevealAnchorHold;
-            const clownFrozen =
-                typeof this.isGameplayFrozen === 'function' && this.isGameplayFrozen();
+        const anchorHold = this.itemRevealAnchorHold;
+        const clownFrozen =
+            typeof this.isGameplayFrozen === 'function' && this.isGameplayFrozen();
 
-            if (!this.itemRevealActive && !anchorHold && !clownFrozen) {
-                this.updateInflation();
-                const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
-                    ? this.activeInflateBall.inflate
-                    : 0;
-                this.sfx.updatePump(pumpInflate, Config.dt, this.inflatePumpActive);
-                this.updateLevelTransition();
-            }
-
-            if (!anchorHold && !clownFrozen) {
-                this.updateBallLabelAnims();
-                this.updatePumpFuelLabelAnims();
-                this.updateComboHud();
-                this.updateImminentPops();
-                this.processChainPops();
-                this.updatePhysics();
-                this.checkLevelLose();
-                this.updateLoseCountdown();
-                this.updateWinRevealCountdown();
-                this.updatePopEffects();
-            }
-            this.updateCelebrateEffects();
+        if (!this.itemRevealActive && !anchorHold && !clownFrozen) {
+            this.updateInflation();
+            const pumpInflate = this.activeInflateBall && this.balls.includes(this.activeInflateBall)
+                ? this.activeInflateBall.inflate
+                : 0;
+            this.sfx.updatePump(pumpInflate, stepDt, this.inflatePumpActive);
+            this.updateLevelTransition();
         }
+
+        if (!anchorHold && !clownFrozen) {
+            this.updateBallLabelAnims();
+            this.updatePumpFuelLabelAnims();
+            this.updateComboHud();
+            this.updateImminentPops();
+            this.processChainPops();
+            this.updatePhysics();
+            this.checkLevelLose();
+            this.updateLoseCountdown();
+            this.updateWinRevealCountdown();
+            this.updatePopEffects();
+        }
+        this.updateCelebrateEffects();
+    }
+
+    loop() {
+        const now = performance.now();
+        if (this._lastFrameMs == null) this._lastFrameMs = now;
+        let frameDt = (now - this._lastFrameMs) / 1000;
+        this._lastFrameMs = now;
+        frameDt = Math.min(Config.SIM_MAX_FRAME_DT, Math.max(0, frameDt));
+
+        if (this.appScreen === 'game') {
+            this._simAccum += frameDt;
+            const stepReal = 1 / Config.SIM_STEPS_PER_SECOND;
+            let steps = 0;
+            while (this._simAccum >= stepReal && steps < Config.SIM_MAX_STEPS_PER_FRAME) {
+                this._simAccum -= stepReal;
+                this._tickSimulationStep();
+                steps += 1;
+            }
+            if (this._simAccum > stepReal * 4) this._simAccum = stepReal * 4;
+        }
+
         this.draw();
         requestAnimationFrame(() => this.loop());
     }
 
     start() {
+        this._lastFrameMs = performance.now();
+        this._simAccum = 0;
         this.loop();
     }
 }
