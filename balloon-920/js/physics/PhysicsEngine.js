@@ -231,9 +231,10 @@ export class PhysicsEngine {
                         if (p.x > Config.width - padding) p.x = Config.width - padding;
                         if (p.x < padding) p.x = padding;
                     }
+                    /** 约束迭代会把粒子拉回墙内，每轮后补一次墙碰撞 */
+                    game.solveTetrisWallCollisions();
                 }
 
-                game.solveTetrisWallCollisions();
                 game.solveBallCollisions();
                 game.solveTetrisWallCollisions();
 

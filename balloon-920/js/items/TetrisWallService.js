@@ -14,6 +14,8 @@ import {
 /** 墙碰撞 slop；粗筛外扩与粒子检测共用 */
 const WALL_COLLISION_SLOP = 2.2;
 const WALL_BROADPHASE_PAD = WALL_COLLISION_SLOP + 3;
+/** 每帧墙求解重复遍数，减少角点与深穿透 */
+const WALL_SOLVE_PASSES = 2;
 
 /** @param {{ x: number, y: number, w: number, h: number }[]} cells */
 function aabbFromCells(cells, pad = 0) {
@@ -271,31 +273,45 @@ export class TetrisWallService {
         const slop = WALL_COLLISION_SLOP;
         const pad = WALL_BROADPHASE_PAD;
 
-        for (let b = 0; b < game.balls.length; b++) {
-            const ball = game.balls[b];
-            game.syncBallBounds(ball);
-            const hullR = Math.max(ball.boundsRadius, ball.radius) + pad;
-            const bMinX = ball.cx - hullR;
-            const bMaxX = ball.cx + hullR;
-            const bMinY = ball.cy - hullR;
-            const bMaxY = ball.cy + hullR;
+        for (let pass = 0; pass < WALL_SOLVE_PASSES; pass++) {
+            for (let b = 0; b < game.balls.length; b++) {
+                const ball = game.balls[b];
+                game.syncBallBounds(ball);
+                const hullR = Math.max(ball.boundsRadius, ball.radius) + pad;
+                const bMinX = ball.cx - hullR;
+                const bMaxX = ball.cx + hullR;
+                const bMinY = ball.cy - hullR;
+                const bMaxY = ball.cy + hullR;
 
-            const pts = ball.particles;
-            for (let w = 0; w < walls.length; w++) {
-                const wall = walls[w];
-                const a = wall.aabb;
-                if (!a || !aabbsOverlap(a, bMinX, bMinY, bMaxX, bMaxY)) continue;
+                const pts = ball.particles;
+                for (let w = 0; w < walls.length; w++) {
+                    const wall = walls[w];
+                    const a = wall.aabb;
+                    if (!a || !aabbsOverlap(a, bMinX, bMinY, bMaxX, bMaxY)) continue;
 
-                for (let i = 0; i < pts.length; i++) {
-                    const p = pts[i];
-                    if (p === game.dragNode) continue;
-                    if (game.particleInSpawnGrowBall?.(p)) continue;
-                    if (p.x < a.minX - pad || p.x > a.maxX + pad || p.y < a.minY - pad || p.y > a.maxY + pad) {
-                        continue;
-                    }
-                    for (const cell of wall.cells) {
-                        if (!particleNearCell(p.x, p.y, cell, slop)) continue;
-                        this._pushParticleOutOfRect(p, cell.x, cell.y, cell.x + cell.w, cell.y + cell.h, slop);
+                    for (let i = 0; i < pts.length; i++) {
+                        const p = pts[i];
+                        if (p === game.dragNode) continue;
+                        if (game.particleInSpawnGrowBall?.(p)) continue;
+                        if (
+                            p.x < a.minX - pad ||
+                            p.x > a.maxX + pad ||
+                            p.y < a.minY - pad ||
+                            p.y > a.maxY + pad
+                        ) {
+                            continue;
+                        }
+                        for (const cell of wall.cells) {
+                            if (!particleNearCell(p.x, p.y, cell, slop)) continue;
+                            this._pushParticleOutOfRect(
+                                p,
+                                cell.x,
+                                cell.y,
+                                cell.x + cell.w,
+                                cell.y + cell.h,
+                                slop,
+                            );
+                        }
                     }
                 }
             }
