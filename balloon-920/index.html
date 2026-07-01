@@ -300,6 +300,75 @@
             font-size: 13px;
         }
 
+        #debugPanel input[type="range"] {
+            padding: 0;
+            height: 22px;
+            accent-color: #f97316;
+        }
+
+        #debugPanel .range-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 2px;
+        }
+
+        #debugPanel .range-val {
+            flex: 0 0 auto;
+            min-width: 42px;
+            text-align: right;
+            font-size: 11px;
+            color: #fbbf24;
+        }
+
+        #debugPanel .panel-divider {
+            margin: 14px 0 10px;
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #debugPanel h3 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            color: #f97316;
+            letter-spacing: 0.1em;
+        }
+
+        #btnBombTuningReset,
+        #btnBombTuningSave,
+        #btnBombTuningReload,
+        #btnBombTuningImport {
+            width: 100%;
+            margin-top: 6px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.88);
+        }
+
+        #btnBombTuningReset {
+            border: 1px solid rgba(249, 115, 22, 0.35);
+            background: rgba(249, 115, 22, 0.15);
+        }
+
+        #btnBombTuningSave {
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            background: rgba(56, 189, 248, 0.18);
+        }
+
+        #btnBombTuningReload,
+        #btnBombTuningImport {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        #bombTuningFileInput {
+            display: none;
+        }
+
         #btnOpenTestLab {
             width: 100%;
             margin-top: 6px;
@@ -407,9 +476,49 @@
             </label>
             <button type="button" id="btnOpenTestLab">打开测试关卡</button>
             <button type="button" id="btnRestartNormalGame">重新开始游戏</button>
+
+            <hr class="panel-divider">
+            <h3>炸弹坠落</h3>
+            <label>
+                <span class="range-row">弧线高度 <span class="range-val" id="bombArcHeightVal">58</span></span>
+                <input type="range" id="bombArcHeight" min="0" max="180" step="2" value="58">
+            </label>
+            <label>
+                <span class="range-row">弧线侧偏 <span class="range-val" id="bombArcSwayVal">0.38</span></span>
+                <input type="range" id="bombArcSway" min="-0.8" max="0.8" step="0.02" value="0.38">
+            </label>
+            <label>
+                <span class="range-row">坠落速度 <span class="range-val" id="bombDropSpeedVal">520</span></span>
+                <input type="range" id="bombDropSpeed" min="200" max="1200" step="20" value="520">
+            </label>
+            <label>
+                <span class="range-row">最短时长(s) <span class="range-val" id="bombMinDurationVal">0.18</span></span>
+                <input type="range" id="bombMinDuration" min="0.08" max="0.6" step="0.01" value="0.18">
+            </label>
+            <label>
+                <span class="range-row">最长时长(s) <span class="range-val" id="bombMaxDurationVal">0.62</span></span>
+                <input type="range" id="bombMaxDuration" min="0.12" max="1.2" step="0.01" value="0.62">
+            </label>
+            <label>
+                <span class="range-row">加速指数 <span class="range-val" id="bombEasePowerVal">2.0</span></span>
+                <input type="range" id="bombEasePower" min="1" max="4" step="0.1" value="2">
+            </label>
+            <label>
+                <span class="range-row">倾斜系数 <span class="range-val" id="bombTiltFactorVal">0.38</span></span>
+                <input type="range" id="bombTiltFactor" min="0" max="1" step="0.02" value="0.38">
+            </label>
+            <label>
+                <span class="range-row">落点停留(s) <span class="range-val" id="bombLandHoldVal">0.00</span></span>
+                <input type="range" id="bombLandHold" min="0" max="1.5" step="0.05" value="0">
+            </label>
+            <button type="button" id="btnBombTuningSave">保存 JSON 文件</button>
+            <button type="button" id="btnBombTuningReload">重新读取 JSON</button>
+            <button type="button" id="btnBombTuningImport">导入 JSON 文件</button>
+            <input type="file" id="bombTuningFileInput" accept="application/json,.json">
+            <button type="button" id="btnBombTuningReset">恢复内置默认</button>
         </aside>
     </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=1.10"></script>
 </body>
 </html>

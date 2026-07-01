@@ -21,8 +21,10 @@ export const NINJA_DART_TEST_LEVEL = {
     activeTeams: [0, 1, 2],
     pump: [120, 120, 120],
     forceNinjaDartOnPop: true,
+    allowedDropItems: ['ninja_dart'],
     dropConfig: {
         ninja_dart: { chance: 1 },
+        bomb: { chance: 0 },
     },
 };
 
@@ -37,7 +39,9 @@ export const BOMB_TEST_LEVEL = {
     activeTeams: [0, 1, 2],
     pump: [120, 120, 120],
     forceBombOnPop: true,
+    allowedDropItems: ['bomb'],
     dropConfig: {
+        ninja_dart: { chance: 0 },
         bomb: { chance: 1, radius: 80 },
     },
 };

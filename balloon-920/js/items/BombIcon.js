@@ -154,3 +154,62 @@ function _drawSpark(ctx, x, y, r, accent, alpha) {
     ctx.arc(x, y, r * 0.28, 0, Math.PI * 2);
     ctx.fill();
 }
+
+/**
+ * 炸点爆破图标：漫画式星芒爆炸（配合循环缩放）
+ * @param {CanvasRenderingContext2D} ctx 已 translate 到炸点中心
+ */
+export function drawExplosionBurstIcon(ctx, { size, accent = '#f97316', alpha = 1, rotation = 0 }) {
+    ctx.save();
+    ctx.rotate(rotation);
+
+    const glowR = size * 1.35;
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, glowR);
+    glow.addColorStop(0, `rgba(255, 251, 235, ${0.72 * alpha})`);
+    glow.addColorStop(0.28, hexToRgba('#fbbf24', 0.55 * alpha));
+    glow.addColorStop(0.62, hexToRgba(accent, 0.22 * alpha));
+    glow.addColorStop(1, 'rgba(249, 115, 22, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, glowR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowColor = hexToRgba(accent, 0.65 * alpha);
+    ctx.shadowBlur = size * 0.35;
+    ctx.fillStyle = hexToRgba(accent, 0.92 * alpha);
+    ctx.strokeStyle = `rgba(255, 251, 235, ${0.88 * alpha})`;
+    ctx.lineWidth = Math.max(1.5, size * 0.07);
+    ctx.beginPath();
+    for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const outer = i % 2 === 0 ? size * 1.05 : size * 0.46;
+        const px = Math.cos(a) * outer;
+        const py = Math.sin(a) * outer;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * alpha})`;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+        const outer = i % 2 === 0 ? size * 0.62 : size * 0.28;
+        const px = Math.cos(a) * outer;
+        const py = Math.sin(a) * outer;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(255, 251, 235, ${0.95 * alpha})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+}

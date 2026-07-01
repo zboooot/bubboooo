@@ -91,6 +91,7 @@ export class ItemService {
         if (ctx.fromDart || ctx.fromBomb || ctx.fromChain) return false;
         if (this.dartActionConsumed) return false;
         if (this.itemReveal || this.ninjaDarts.length > 0 || this.bombs.length > 0) return false;
+        if (!this._isDropEnabledForLevel('ninja_dart')) return false;
         return true;
     }
 
@@ -98,7 +99,22 @@ export class ItemService {
         if (ctx.fromBomb || ctx.fromDart || ctx.fromChain) return false;
         if (this.bombActionConsumed) return false;
         if (this.itemReveal || this.bombs.length > 0 || this.ninjaDarts.length > 0) return false;
+        if (!this._isDropEnabledForLevel('bomb')) return false;
         return true;
+    }
+
+    _isDropEnabledForLevel(itemId) {
+        const level = this.game.currentLevelSpec;
+        if (Array.isArray(level?.allowedDropItems)) {
+            return level.allowedDropItems.includes(itemId);
+        }
+        if (level?.forceBombOnPop && itemId === 'ninja_dart') return false;
+        if (level?.forceNinjaDartOnPop && itemId === 'bomb') return false;
+
+        const chance = itemId === 'ninja_dart'
+            ? this.dropTable._resolveNinjaDartChance(level)
+            : this.dropTable._resolveBombChance(level);
+        return chance > 0;
     }
 
     _releaseEmbedded(ball, cx, cy) {

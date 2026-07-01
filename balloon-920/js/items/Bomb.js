@@ -1,5 +1,6 @@
 import * as Config from '../config.js';
-import { drawBombIcon } from './BombIcon.js';
+import { getBombDropTuning } from './bombDropTuning.js';
+import { drawBombIcon, drawExplosionBurstIcon } from './BombIcon.js';
 
 let _nextBombUid = 1;
 
@@ -32,7 +33,7 @@ export class Bomb {
         this.dropElapsed = 0;
         this.holdElapsed = 0;
         this.explodeElapsed = 0;
-        this.explodeRingT = 0;
+        this.explodePulsePhase = 0;
         this.alive = true;
         this.popped = false;
         this.wobble = Math.random() * Math.PI * 2;
@@ -40,16 +41,61 @@ export class Bomb {
         this.prevX = this.x;
         this.prevY = this.y;
 
-        const duration = Config.BOMB_DROP_DURATION_SEC;
-        const gravity = Config.BOMB_DROP_GRAVITY;
-        this._dropVx = (this.targetX - this.startX) / duration;
-        this._dropVy0 = (this.targetY - this.startY) / duration - 0.5 * gravity * duration;
-        this._dropGravity = gravity;
+        const traj = Bomb._computeArcTrajectory(
+            this.startX,
+            this.startY,
+            this.targetX,
+            this.targetY
+        );
+        this._arcCtrlX = traj.ctrlX;
+        this._arcCtrlY = traj.ctrlY;
+        this._dropDuration = traj.duration;
+    }
+
+    static _computeArcTrajectory(startX, startY, targetX, targetY) {
+        const tune = getBombDropTuning();
+        const dx = targetX - startX;
+        const dy = targetY - startY;
+        const dist = Math.hypot(dx, dy) || 1;
+
+        let duration = dist / tune.dropSpeed;
+        duration = Math.max(
+            tune.minDurationSec,
+            Math.min(tune.maxDurationSec, duration)
+        );
+
+        const ctrlX = (startX + targetX) * 0.5 + dx * tune.arcSway;
+        const ctrlY = (startY + targetY) * 0.5 - tune.arcHeight;
+
+        return { ctrlX, ctrlY, duration };
+    }
+
+    static _easeDropProgress(rawT, power) {
+        const t = Math.max(0, Math.min(1, rawT));
+        return t ** power;
+    }
+
+    static _bezierPoint(u, x0, y0, cx, cy, x2, y2) {
+        const inv = 1 - u;
+        return {
+            x: inv * inv * x0 + 2 * inv * u * cx + u * u * x2,
+            y: inv * inv * y0 + 2 * inv * u * cy + u * u * y2,
+        };
+    }
+
+    static _bezierTangent(u, x0, y0, cx, cy, x2, y2) {
+        const inv = 1 - u;
+        return {
+            x: 2 * inv * (cx - x0) + 2 * u * (x2 - cx),
+            y: 2 * inv * (cy - y0) + 2 * u * (y2 - cy),
+        };
     }
 
     get fuseLength() {
         if (this.phase === 'holding') {
-            return Math.max(0, 1 - this.holdElapsed / Config.BOMB_LAND_HOLD_SEC);
+            const holdSec = getBombDropTuning().landHoldSec;
+            if (holdSec <= 0) return 0;
+            return Math.max(0, 1 - this.holdElapsed / holdSec);
         }
         return 1;
     }
@@ -137,14 +183,17 @@ export class Bomb {
 
         if (this.phase === 'dropping') {
             this.dropElapsed += dt;
-            const tau = Math.min(this.dropElapsed, Config.BOMB_DROP_DURATION_SEC);
-            const pos = Bomb._parabolicPosition(
+            const tune = getBombDropTuning();
+            const rawT = Math.min(1, this.dropElapsed / this._dropDuration);
+            const u = Bomb._easeDropProgress(rawT, tune.easePower);
+            const pos = Bomb._bezierPoint(
+                u,
                 this.startX,
                 this.startY,
-                this._dropVx,
-                this._dropVy0,
-                this._dropGravity,
-                tau
+                this._arcCtrlX,
+                this._arcCtrlY,
+                this.targetX,
+                this.targetY
             );
 
             this.prevX = this.x;
@@ -152,10 +201,18 @@ export class Bomb {
             this.x = pos.x;
             this.y = pos.y;
 
-            const vy = this._dropVy0 + this._dropGravity * tau;
-            this.tilt = Math.atan2(vy, this._dropVx) * 0.28;
+            const tan = Bomb._bezierTangent(
+                u,
+                this.startX,
+                this.startY,
+                this._arcCtrlX,
+                this._arcCtrlY,
+                this.targetX,
+                this.targetY
+            );
+            this.tilt = Math.atan2(tan.y, tan.x || 0.001) * tune.tiltFactor;
 
-            if (this.dropElapsed >= Config.BOMB_DROP_DURATION_SEC) {
+            if (this.dropElapsed >= this._dropDuration) {
                 this.x = this.targetX;
                 this.y = this.targetY;
                 this.tilt = 0;
@@ -170,7 +227,7 @@ export class Bomb {
             this.y = this.targetY;
             this.tilt = Math.sin(this.wobble * 1.4) * 0.04;
             this.holdElapsed += dt;
-            if (this.holdElapsed >= Config.BOMB_LAND_HOLD_SEC) {
+            if (this.holdElapsed >= getBombDropTuning().landHoldSec) {
                 this.phase = 'exploding';
                 this.explodeElapsed = 0;
                 this._popBallsInRadius(game);
@@ -180,10 +237,7 @@ export class Bomb {
 
         if (this.phase === 'exploding') {
             this.explodeElapsed += dt;
-            this.explodeRingT = Math.min(
-                1,
-                this.explodeElapsed / Config.BOMB_EXPLODE_HOLD_SEC
-            );
+            this.explodePulsePhase += dt * Config.BOMB_EXPLODE_PULSE_HZ * Math.PI * 2;
             if (this.explodeElapsed >= Config.BOMB_EXPLODE_HOLD_SEC) {
                 this.phase = 'done';
                 this.alive = false;
@@ -191,11 +245,22 @@ export class Bomb {
         }
     }
 
-    static _parabolicPosition(startX, startY, vx, vy0, gravity, tau) {
-        return {
-            x: startX + vx * tau,
-            y: startY + vy0 * tau + 0.5 * gravity * tau * tau,
-        };
+    get explodeProgress() {
+        return Math.min(1, this.explodeElapsed / Config.BOMB_EXPLODE_HOLD_SEC);
+    }
+
+    get explodePulseScale() {
+        const wave = 0.5 + 0.5 * Math.sin(this.explodePulsePhase);
+        const min = Config.BOMB_EXPLODE_ICON_MIN_SCALE;
+        const max = Config.BOMB_EXPLODE_ICON_MAX_SCALE;
+        const envelope = 1 - this.explodeProgress * 0.35;
+        return (min + (max - min) * wave) * envelope;
+    }
+
+    get explodeIconAlpha() {
+        const fade = 1 - this.explodeProgress * 0.55;
+        const flicker = 0.88 + 0.12 * Math.sin(this.explodePulsePhase * 1.6);
+        return fade * flicker;
     }
 
     _popBallsInRadius(game) {
@@ -222,7 +287,7 @@ export class Bomb {
 
         if (this.phase !== 'dropping' && this.phase !== 'holding') return;
 
-        const size = Config.BOMB_VISUAL_SIZE;
+        const size = Config.BOMB_VISUAL_SIZE * Config.BOMB_FIELD_SCALE;
 
         ctx.save();
         ctx.translate(this.x, this.y);
@@ -237,31 +302,33 @@ export class Bomb {
     }
 
     _drawExplosion(ctx) {
-        const ringR = this.radius * Config.BOMB_EXPLODE_RING_MAX_SCALE * this.explodeRingT;
-        const alpha = 1 - this.explodeRingT * 0.65;
+        const alpha = this.explodeIconAlpha;
+        const pulseScale = this.explodePulseScale;
+        const baseSize = Config.BOMB_EXPLODE_ICON_BASE_SIZE * Config.BOMB_FIELD_SCALE;
+        const shockR = this.radius * (0.55 + pulseScale * 0.35) * (1 - this.explodeProgress * 0.25);
 
         ctx.save();
         ctx.translate(this.targetX, this.targetY);
 
-        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, ringR);
-        glow.addColorStop(0, `rgba(251, 191, 36, ${0.55 * alpha})`);
-        glow.addColorStop(0.35, `rgba(249, 115, 22, ${0.28 * alpha})`);
-        glow.addColorStop(1, 'rgba(249, 115, 22, 0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.arc(0, 0, ringR, 0, Math.PI * 2);
-        ctx.fill();
+        const shockAlpha = alpha * 0.42 * (1 - this.explodeProgress * 0.4);
+        if (shockAlpha > 0.02) {
+            const shock = ctx.createRadialGradient(0, 0, 0, 0, 0, shockR);
+            shock.addColorStop(0, `rgba(251, 191, 36, ${shockAlpha})`);
+            shock.addColorStop(0.45, `rgba(249, 115, 22, ${shockAlpha * 0.55})`);
+            shock.addColorStop(1, 'rgba(249, 115, 22, 0)');
+            ctx.fillStyle = shock;
+            ctx.beginPath();
+            ctx.arc(0, 0, shockR, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
-        ctx.strokeStyle = `rgba(249, 115, 22, ${0.75 * alpha})`;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(0, 0, ringR, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.35 * alpha})`;
-        ctx.beginPath();
-        ctx.arc(0, 0, Math.max(6, ringR * 0.12), 0, Math.PI * 2);
-        ctx.fill();
+        ctx.scale(pulseScale, pulseScale);
+        drawExplosionBurstIcon(ctx, {
+            size: baseSize,
+            accent: '#f97316',
+            alpha,
+            rotation: this.explodePulsePhase * 0.08,
+        });
 
         ctx.restore();
     }

@@ -2,6 +2,7 @@ import { APP_VERSION } from './config.js';
 import { LOGICAL_WIDTH, LOGICAL_HEIGHT } from './config.js';
 import { BalloonGameApp } from './BalloonGameApp.js';
 import { DebugPanelController } from './ui/DebugPanelController.js';
+import { BombDropTuningController } from './ui/BombDropTuningController.js';
 
 function resolveLaunchOptions() {
     const params = new URLSearchParams(window.location.search);
@@ -18,29 +19,34 @@ function resolveLaunchOptions() {
     return Number.isFinite(idx) && idx >= 0 ? { startLevel: idx } : {};
 }
 
-const canvas = document.getElementById('physicsCanvas');
-const versionTagEl = document.getElementById('versionTag');
+async function bootstrap() {
+    const canvas = document.getElementById('physicsCanvas');
+    const versionTagEl = document.getElementById('versionTag');
 
-canvas.width = LOGICAL_WIDTH;
-canvas.height = LOGICAL_HEIGHT;
-if (versionTagEl) versionTagEl.textContent = `v${APP_VERSION}`;
+    canvas.width = LOGICAL_WIDTH;
+    canvas.height = LOGICAL_HEIGHT;
+    if (versionTagEl) versionTagEl.textContent = `v${APP_VERSION}`;
 
-const dom = {
-    canvas,
-    ctx: canvas.getContext('2d'),
-    ballCountEl: document.getElementById('ballCount'),
-    levelHudEl: document.getElementById('levelHud'),
-    comboHudEl: document.getElementById('comboHud'),
-    comboValueEl: document.getElementById('comboValue'),
-    versionTagEl,
-    startScreenEl: document.getElementById('startScreen'),
-    btnStartPrimary: document.getElementById('btnStartPrimary'),
-    btnStartRestart: document.getElementById('btnStartRestart'),
-    stageEl: document.getElementById('stage'),
-    btnOpenTestLab: document.getElementById('btnOpenTestLab'),
-    btnRestartNormalGame: document.getElementById('btnRestartNormalGame'),
-};
+    const dom = {
+        canvas,
+        ctx: canvas.getContext('2d'),
+        ballCountEl: document.getElementById('ballCount'),
+        levelHudEl: document.getElementById('levelHud'),
+        comboHudEl: document.getElementById('comboHud'),
+        comboValueEl: document.getElementById('comboValue'),
+        versionTagEl,
+        startScreenEl: document.getElementById('startScreen'),
+        btnStartPrimary: document.getElementById('btnStartPrimary'),
+        btnStartRestart: document.getElementById('btnStartRestart'),
+        stageEl: document.getElementById('stage'),
+        btnOpenTestLab: document.getElementById('btnOpenTestLab'),
+        btnRestartNormalGame: document.getElementById('btnRestartNormalGame'),
+    };
 
-const app = new BalloonGameApp(dom, resolveLaunchOptions());
-new DebugPanelController(app);
-app.start();
+    const app = new BalloonGameApp(dom, resolveLaunchOptions());
+    new DebugPanelController(app);
+    await BombDropTuningController.create(app);
+    app.start();
+}
+
+bootstrap();

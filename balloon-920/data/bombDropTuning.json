@@ -1,0 +1,10 @@
+{
+  "arcHeight": 58,
+  "arcSway": 0.38,
+  "dropSpeed": 520,
+  "minDurationSec": 0.18,
+  "maxDurationSec": 0.62,
+  "easePower": 2,
+  "tiltFactor": 0.38,
+  "landHoldSec": 0
+}

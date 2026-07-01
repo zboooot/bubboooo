@@ -76,12 +76,23 @@ export const NINJA_DART_DEFAULT_DROP_CHANCE = 0.18;
 
 /** 炸弹：爆破触发，随机落点下落，范围爆破气球 */
 export const BOMB_DEFAULT_EXPLOSION_RADIUS = 80;
-export const BOMB_DROP_DURATION_SEC = 0.8;
-export const BOMB_DROP_GRAVITY = 1100;
-export const BOMB_LAND_HOLD_SEC = 0.5;
-export const BOMB_EXPLODE_HOLD_SEC = 0.4;
-export const BOMB_EXPLODE_RING_MAX_SCALE = 1;
+/** 炸弹坠落：二次贝塞尔抛物线 */
+export const BOMB_DROP_ARC_HEIGHT = 58;
+export const BOMB_DROP_ARC_SWAY = 0.38;
+export const BOMB_DROP_SPEED = 520;
+export const BOMB_DROP_MIN_DURATION_SEC = 0.18;
+export const BOMB_DROP_MAX_DURATION_SEC = 0.62;
+export const BOMB_DROP_TILT_FACTOR = 0.38;
+export const BOMB_DROP_EASE_POWER = 2;
+export const BOMB_LAND_HOLD_SEC = 0;
+export const BOMB_EXPLODE_HOLD_SEC = 0.65;
+export const BOMB_EXPLODE_PULSE_HZ = 4.5;
+export const BOMB_EXPLODE_ICON_MIN_SCALE = 0.68;
+export const BOMB_EXPLODE_ICON_MAX_SCALE = 1.55;
+export const BOMB_EXPLODE_ICON_BASE_SIZE = 22;
 export const BOMB_VISUAL_SIZE = 18;
+/** 场上炸弹相对基础尺寸的缩放（落点展示） */
+export const BOMB_FIELD_SCALE = 2;
 export const BOMB_DEFAULT_DROP_CHANCE = 0.18;
 /** 揭晓暗屏中央，炸弹坠落起点（与 ItemRevealPresentation 一致） */
 export const BOMB_REVEAL_CENTER_X = LOGICAL_WIDTH * 0.5;

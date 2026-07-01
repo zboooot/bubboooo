@@ -25,15 +25,16 @@ export class ItemDropTable {
 
         const level = this.game.currentLevelSpec;
         const drops = [];
+        const allowed = this._allowedDropSet(level);
 
-        if (ctx.dartEligible) {
+        if (ctx.dartEligible && this._isDropAllowed(level, 'ninja_dart', allowed)) {
             const ninjaChance = this._resolveNinjaDartChance(level);
             if (ninjaChance > 0 && Math.random() < ninjaChance) {
                 drops.push('ninja_dart');
             }
         }
 
-        if (ctx.bombEligible) {
+        if (ctx.bombEligible && this._isDropAllowed(level, 'bomb', allowed)) {
             const bombChance = this._resolveBombChance(level);
             if (bombChance > 0 && Math.random() < bombChance) {
                 drops.push('bomb');
@@ -41,6 +42,18 @@ export class ItemDropTable {
         }
 
         return drops.filter((id) => getItemDef(id));
+    }
+
+    _allowedDropSet(level) {
+        if (!Array.isArray(level?.allowedDropItems)) return null;
+        return new Set(level.allowedDropItems);
+    }
+
+    _isDropAllowed(level, itemId, allowed) {
+        if (allowed) return allowed.has(itemId);
+        if (level?.forceBombOnPop && itemId === 'ninja_dart') return false;
+        if (level?.forceNinjaDartOnPop && itemId === 'bomb') return false;
+        return true;
     }
 
     _resolveNinjaDartChance(level) {
@@ -51,6 +64,8 @@ export class ItemDropTable {
         }
 
         if (level?.forceNinjaDartOnPop) return 1;
+
+        if (level?.testLevel || level?.forceBombOnPop) return 0;
 
         return Config.NINJA_DART_DEFAULT_DROP_CHANCE;
     }
@@ -63,6 +78,8 @@ export class ItemDropTable {
         }
 
         if (level?.forceBombOnPop) return 1;
+
+        if (level?.testLevel || level?.forceNinjaDartOnPop) return 0;
 
         return 0;
     }
